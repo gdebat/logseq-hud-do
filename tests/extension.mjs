@@ -39,7 +39,7 @@ const controller = new RefreshController(() => {
     return new Promise((resolve, reject) => pending.push({resolve, reject}));
 }, value => published.push(value), message => errors.push(message));
 const first = controller.refresh();
-controller.refresh();
+controller.refresh(true);
 controller.refresh();
 equal(calls, 1);
 pending.shift().resolve('obsolete');
@@ -61,3 +61,23 @@ await controller.refresh();
 equal(published, ['fresh']);
 equal(calls, 4);
 print('Extension model and refresh tests passed');
+
+for (const fails of [false, true]) {
+    const queue = [];
+    const results = [];
+    const c = new RefreshController(() => new Promise((resolve, reject) => queue.push({resolve, reject})),
+        x => results.push(x), x => results.push(x));
+    for (let i = 0; i < 3; i++) {
+        const running = c.refresh();
+        c.refresh();
+        c.refresh();
+        if (fails) queue.shift().reject(new Error('visible'));
+        else queue.shift().resolve('visible');
+        await running;
+    }
+    equal(results, ['visible', 'visible', 'visible']);
+    c.close();
+    queue.shift().resolve('closed');
+    await Promise.resolve();
+    equal(results.length, 3);
+}

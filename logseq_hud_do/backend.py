@@ -204,8 +204,8 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
     if not resolved or len({str(p) for p, _ in resolved}) != len(resolved):
         raise ValueError('configure at least one distinct graph directory')
     for path, _ in resolved:
-        if not path.is_dir() or not any((path / part).is_dir() for part in GRAPH_ROOTS):
-            raise ValueError(f'invalid graph directory: {path}')
+        if not path.is_dir() or not any((path / part).is_dir() and not (path / part).is_symlink() for part in GRAPH_ROOTS):
+            raise ValueError(f'invalid graph directory (requires non-symlink pages/ or journals/): {path}')
     cache = Path(cache).expanduser().resolve()
     if any(cache.is_relative_to(path) for path, _ in resolved):
         raise ValueError('cache must be outside graph directories')

@@ -41,8 +41,8 @@ export default class Preferences extends ExtensionPreferences {
             const path = entry.text.trim();
             const directory = Gio.File.new_for_path(path);
             if (!GLib.path_is_absolute(path) || !directory.query_exists(null) ||
-                !['pages', 'journals'].some(child => directory.get_child(child).query_file_type(Gio.FileQueryInfoFlags.NONE, null) === Gio.FileType.DIRECTORY)) {
-                addRow.subtitle = 'Enter an existing absolute graph directory with pages/ or journals/.';
+                !['pages', 'journals'].some(child => directory.get_child(child).query_file_type(Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null) === Gio.FileType.DIRECTORY)) {
+                addRow.subtitle = 'Enter an existing absolute graph directory with non-symlink pages/ or journals/.';
                 return;
             }
             if (rows.some(row => row.path === path)) {
@@ -57,10 +57,12 @@ export default class Preferences extends ExtensionPreferences {
         });
         const refresh = new Adw.PreferencesGroup({title: 'Refresh and display'});
         page.add(refresh);
-        for (const [key, title, lower, upper] of [
-            ['refresh-interval', 'Refresh interval (seconds)', 5, 86400],
-            ['horizon', 'Upcoming horizon (days)', 0, 3650],
+        for (const [key, title] of [
+            ['refresh-interval', 'Refresh interval (seconds)'],
+            ['horizon', 'Upcoming horizon (days)'],
         ]) {
+            const [, bounds] = settings.settings_schema.get_key(key).get_range().deep_unpack();
+            const [lower, upper] = bounds.deep_unpack();
             const row = new Adw.SpinRow({title, adjustment: new Gtk.Adjustment({lower, upper, step_increment: 1, page_increment: 10})});
             settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
             refresh.add(row);

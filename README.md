@@ -1,6 +1,6 @@
 # Logseq HUD Do
 
-A native GNOME Shell 46 indicator with an offline, read-only Python backend for Logseq OG Markdown graphs.
+A native GNOME Shell 46–50 indicator with an offline, read-only Python backend for Logseq OG Markdown graphs.
 The backend requires Python 3.10+ on Linux with no third-party Python dependencies.
 The extension bundles the existing backend; no permanent service is installed.
 
@@ -56,6 +56,10 @@ subdirectories are skipped, and source opens reject symlink components.
 
 ## Development and benchmarks
 
+`make test` requires Python 3.10+, GNOME Shell 46–50, `glib-compile-schemas`,
+and `gsettings` on PATH: it includes a disposable extension installation.
+For backend-only development use `python3 -m unittest discover -s tests -p 'test_backend.py' -v`.
+
 ```sh
 make test
 make check
@@ -92,10 +96,11 @@ A graph actively being rewritten is not a graph-wide filesystem snapshot.
 
 ## GNOME Shell extension
 
-Requires GNOME Shell **46**, GJS, Python 3.10+, GTK 4, libadwaita and
+Targets GNOME Shell **46, 47, 48, 49 and 50**, with GJS, Python 3.10+, GTK 4, libadwaita and
 `glib-compile-schemas` (provided by the GNOME desktop development/runtime packages).
 The installed development environment reports GNOME Shell 46.0 and GJS 1.80.2.
-Other Shell major versions are deliberately not declared compatible.
+Metadata declares these five versions based on static API review; live runtime
+compatibility is not yet verified on any version. See [compatibility evidence](docs/gnome-compatibility.md).
 
 ```sh
 sh scripts/install-extension.sh
@@ -108,7 +113,7 @@ Add each graph by absolute directory path and an optional display name. To chang
 an existing path or name, remove that entry and add it again. Preferences also
 control refresh seconds (default 30), upcoming days (default 7), Overdue/Upcoming
 visibility, and the panel Today count. Today always remains visible.
-Directories must contain pages/ or journals/. The backend validates graph access
+Directories must contain non-symlink pages/ or journals/. The backend validates graph access
 again on every refresh. Missing or unreadable graphs display an error rather
 than stale tasks; correct the directory and select Refresh.
 
@@ -140,7 +145,7 @@ temporary XDG directory to scan a generated graph using the bundled backend.
 Static checks compile the schema strictly, parse JavaScript, and check installer
 shell syntax. No JavaScript linter or type checker is configured.
 
-Live acceptance (requires a GNOME 46 desktop session): enable the extension,
+Live acceptance (requires a desktop session on each of GNOME 46–50): enable the extension,
 configure disposable graphs with long tasks and all priorities, verify scrolling,
 keyboard navigation, panel count, all empty states and badge contrast under both
 light and dark Shell themes and display scaling. Open a task with Logseq's URI

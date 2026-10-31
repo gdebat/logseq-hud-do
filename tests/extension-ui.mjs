@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {sections, taskPresentation, RefreshController} from '../extension/model.js';
+import {sections, taskPresentation, RefreshController, backendArguments, parseTasks} from '../extension/model.js';
 
 class Actor {
     constructor(props = {}) { Object.assign(this, props); this.children = []; this.clutter_text = {}; this.handlers = {}; }
@@ -27,18 +27,19 @@ const settings = new Actor();
 settings.get_boolean = key => values[key];
 settings.get_int = key => values[key];
 settings.get_value = () => ({deep_unpack: () => []});
-const timers = new Set();
+const timers = new Map();
+let timerId = 0;
 const now = {add_days: () => now, get_year: () => 2026, get_month: () => 11, get_day_of_month: () => 1, difference: () => 10000000};
 const St = {BoxLayout: Actor, Icon: Actor, Label: Actor, ScrollView: Actor, Button: class extends Actor {}, PolicyType: {NEVER: 0, AUTOMATIC: 1}};
 const context = vm.createContext({
-    St, sections, taskPresentation, RefreshController,
+    St, sections, taskPresentation, RefreshController, backendArguments, parseTasks,
     Extension: class { getSettings() { return settings; } },
     Clutter: {ActorAlign: {CENTER: 0}}, Pango: {EllipsizeMode: {NONE: 0}},
     PanelMenu: {Button: Indicator},
     PopupMenu: {PopupMenuItem: Item, PopupBaseMenuItem: Actor, PopupSeparatorMenuItem: Actor},
     Main: {panel: {addToStatusArea() {}}},
     GLib: {DateTime: {new_now_local: () => now, new_local: () => now},
-        timeout_add_seconds: () => { const id = timers.size + 1; timers.add(id); return id; },
+        timeout_add_seconds: (_priority, seconds, callback) => { const id = ++timerId; timers.set(id, {seconds, callback}); return id; },
         Source: {remove: id => timers.delete(id)}},
     Gio: {AppInfo: {get_default_for_uri_scheme: () => null}},
 });
@@ -74,6 +75,8 @@ hud._controller.refresh = () => refreshes++;
 hud._indicator.menu.handlers['open-state-changed'](null, true);
 hud._indicator.menu.children.find(child => child.label === 'Refresh').action();
 assert.equal(refreshes, 2);
+timers.get(hud._timer).callback();
+assert.equal(refreshes, 3);
 let killed = false;
 let cancelled = false;
 hud._process = {force_exit() { killed = true; }};
@@ -85,3 +88,60 @@ assert.equal(timers.size, 0);
 assert.equal(Object.keys(settings.handlers).length, 0);
 assert(hud._controller.closed);
 console.log('Extension UI and cleanup tests passed');
+
+context.Clutter.Orientation = {VERTICAL: 1};
+for (const modern of [false, true]) {
+    if (modern) Actor.prototype.orientation = 0;
+    const box = hud._verticalBox();
+    assert.equal(modern ? box.orientation : box.vertical, modern ? 1 : true);
+    delete Actor.prototype.orientation;
+}
+settings.get_value = () => ({deep_unpack: () => [['/fixture', 'Fixture']]});
+context.Clutter.Orientation = {VERTICAL: 1};
+const completions = [];
+let spawned;
+Object.assign(context.Gio, {
+    SubprocessFlags: {STDOUT_PIPE: 1, STDERR_PIPE: 2},
+    Cancellable: class { cancel() {} },
+    SubprocessLauncher: class {
+        set_cwd(value) { assert.equal(value, '/extension'); }
+        setenv(key, value, overwrite) { assert.equal(key, 'PYTHONPATH'); assert.equal(value, '/extension'); assert(overwrite); }
+        spawnv(args) {
+            spawned = Array.from(args);
+            return {
+                communicate_utf8_async(_input, _cancel, callback) { completions.push(result => callback(this, result)); },
+                communicate_utf8_finish(result) { if (result.error) throw new Error(result.error); return [true, result.stdout, result.stderr]; },
+                get_successful() { return this.success; },
+                success: true,
+            };
+        }
+    },
+});
+values['show-today-count'] = true;
+const integrated = new context.Hud();
+integrated.path = '/extension';
+integrated.enable();
+assert(spawned.includes('--graph=/fixture'));
+completions.shift()({stdout: JSON.stringify({today: [task], overdue: [], upcoming: []}), stderr: ''});
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(integrated._count.text, '1');
+assert.equal(integrated._rows.children[1].children[0].children[0].text, '<literal>');
+for (const result of [
+    {stdout: '', stderr: '{"error":"Scan failed"}', success: false, expected: 'Scan failed'},
+    {stdout: '{', stderr: '', success: true, expected: /JSON|position|property/},
+    {error: 'Communication failed', expected: 'Communication failed'},
+]) {
+    const running = integrated._controller.refresh();
+    integrated._process.success = result.success;
+    completions.shift()(result);
+    await running;
+    assert.match(integrated._message.label.text, new RegExp(result.expected));
+    assert.equal(integrated._rows.children.length, 0);
+}
+const before = completions.length;
+timers.get(integrated._timer).callback();
+assert.equal(completions.length, before + 1);
+completions.shift()({stdout: '{"today":[],"overdue":[],"upcoming":[]}', stderr: ''});
+await new Promise(resolve => setImmediate(resolve));
+integrated.disable();
+assert.equal(timers.size, 0);

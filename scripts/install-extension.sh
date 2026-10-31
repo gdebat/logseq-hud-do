@@ -2,10 +2,15 @@
 set -eu
 source_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 version=$(gnome-shell --version)
-case "$version" in
-    'GNOME Shell 46.'*) ;;
-    *) echo "Supported GNOME Shell version: 46 (found $version)" >&2; exit 1 ;;
-esac
+python3 - "$source_dir/extension/metadata.json" "$version" <<'PYTHON'
+import json
+import re
+import sys
+supported = json.load(open(sys.argv[1]))['shell-version']
+match = re.fullmatch(r'GNOME Shell (\d+)(?:\..*)?', sys.argv[2])
+if not match or match[1] not in supported:
+    sys.exit(f"Supported GNOME Shell versions: {', '.join(supported)} (found {sys.argv[2]})")
+PYTHON
 extension_dir="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/logseq-hud-do@local"
 mkdir -p "$extension_dir/schemas" "$extension_dir/logseq_hud_do"
 cp "$source_dir"/extension/*.js "$source_dir"/extension/*.css "$source_dir"/extension/metadata.json "$extension_dir/"

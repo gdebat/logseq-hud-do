@@ -22,7 +22,7 @@ export function parseTasks(stdout) {
             if (typeof task.content !== 'string' || typeof task.graph !== 'string' ||
                 typeof task.source_page !== 'string' ||
                 !['TODO', 'DOING'].includes(task.status) ||
-                ![null, 'A', 'B', 'C'].includes(task.priority) ||
+                (task.priority !== null && !Object.hasOwn(priorities, task.priority)) ||
                 (task.scheduled !== null && typeof task.scheduled !== 'string') ||
                 (task.deep_link !== null && typeof task.deep_link !== 'string'))
                 throw new Error('Invalid backend task.');
@@ -53,20 +53,22 @@ export class RefreshController {
         this.closed = false;
     }
 
-    async refresh() {
+    async refresh(invalidate = false) {
         if (this.closed)
             return;
         if (this.active) {
             this.pending = true;
+            this.obsolete ||= invalidate;
             return;
         }
         this.active = true;
+        this.obsolete = false;
         try {
             const data = await this.run();
-            if (!this.closed && !this.pending)
+            if (!this.closed && !this.obsolete)
                 this.publish(data);
         } catch (error) {
-            if (!this.closed && !this.pending)
+            if (!this.closed && !this.obsolete)
                 this.fail(error.message);
         } finally {
             this.active = false;

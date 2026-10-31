@@ -14,6 +14,7 @@ check:
 test-extension:
 	gjs -m tests/extension.mjs
 	node tests/extension-ui.mjs
+	node tests/extension-prefs.mjs
 	python3 -m unittest discover -s tests -p 'test_extension*.py' -v
 
 check-extension:

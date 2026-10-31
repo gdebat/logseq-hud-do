@@ -23,7 +23,7 @@ export default class LogseqHudDo extends Extension {
         const item = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
         const scroll = new St.ScrollView({style_class: 'hud-scroll', overlay_scrollbars: true});
         scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
-        this._rows = new St.BoxLayout({vertical: true, x_expand: true});
+        this._rows = this._verticalBox();
         scroll.set_child(this._rows);
         item.add_child(scroll);
         this._indicator.menu.addMenuItem(item);
@@ -46,11 +46,18 @@ export default class LogseqHudDo extends Extension {
         this._settingsSignal = this._settings.connect('changed', () => {
             this._render();
             this._schedule();
-            this._controller.refresh();
+            this._controller.refresh(true);
         });
         Main.panel.addToStatusArea(this.uuid, this._indicator);
         this._schedule();
         this._controller.refresh();
+    }
+
+    _verticalBox() {
+        // St's vertical property was replaced by orientation in Shell 48.
+        return new St.BoxLayout({x_expand: true,
+            ...('orientation' in St.BoxLayout.prototype
+                ? {orientation: Clutter.Orientation.VERTICAL} : {vertical: true})});
     }
 
     _showMessage(message) {
@@ -137,7 +144,7 @@ export default class LogseqHudDo extends Extension {
         const view = taskPresentation(task);
         const button = new St.Button({style_class: 'hud-task', x_expand: true, can_focus: true,
             accessible_name: [view.content, view.doing ? 'DOING' : '', view.priority?.[0] ?? '', view.context].filter(Boolean).join(', ')});
-        const row = new St.BoxLayout({vertical: true, x_expand: true});
+        const row = this._verticalBox();
         const label = new St.Label({text: view.content, x_expand: true});
         label.clutter_text.line_wrap = true;
         label.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
