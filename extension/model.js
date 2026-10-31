@@ -34,7 +34,7 @@ export function parseTasks(stdout) {
 
 export function taskPresentation(task) {
     return {
-        content: task.content,
+        content: task.content.replace(/\[#(?:A|B|C)\][ \t]*/g, '').trim(),
         doing: task.status === 'DOING',
         priority: priorities[task.priority] ?? null,
         context: `${task.graph} · ${task.scheduled || task.source_page}`,

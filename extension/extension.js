@@ -20,7 +20,7 @@ export default class LogseqHudDo extends Extension {
         this._indicator.add_child(panel);
         this._message = new PopupMenu.PopupMenuItem('Loading tasks…', {reactive: false});
         this._indicator.menu.addMenuItem(this._message);
-        const item = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
+        const item = new PopupMenu.PopupBaseMenuItem({reactive: true, can_focus: false});
         const scroll = new St.ScrollView({style_class: 'hud-scroll', overlay_scrollbars: true});
         scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
         this._rows = this._verticalBox();

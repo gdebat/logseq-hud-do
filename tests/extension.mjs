@@ -81,3 +81,11 @@ for (const fails of [false, true]) {
     await Promise.resolve();
     equal(results.length, 3);
 }
+
+for (const priority of ['A', 'B', 'C']) {
+    const original = {...task, content: `[#${priority}] Ship [#A] now\nKeep literal <text>`, priority};
+    equal(taskPresentation(original).content, 'Ship now\nKeep literal <text>');
+    equal(taskPresentation(original).priority, {A: ['High', 'high'], B: ['Medium', 'medium'], C: ['Low', 'low']}[priority]);
+    equal(original.content, `[#${priority}] Ship [#A] now\nKeep literal <text>`);
+}
+equal(taskPresentation({...task, content: '[#D] literal'}).content, '[#D] literal');

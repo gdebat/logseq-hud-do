@@ -352,6 +352,16 @@ class BackendTests(unittest.TestCase):
             result, _ = self.scan()
             self.assertEqual([t['deep_link'] for t in result['today']], [f'logseq://graph/graph?block-id={identifier}', 'logseq://graph/graph?page=2026_10_31'])
 
+    def test_deep_links_encode_graph_and_page_without_display_alias(self):
+        graph = self.root / 'My Graph & notes'
+        (graph / 'pages').mkdir(parents=True)
+        (graph / 'pages' / 'A & B.md').write_text('- TODO task\n  SCHEDULED: <2026-10-31 Sat>')
+        for _ in range(2):
+            result, _ = scan([(graph, 'Display alias')], self.cache, today=TODAY)
+            task = result['today'][0]
+            self.assertEqual(task['graph'], 'Display alias')
+            self.assertEqual(task['deep_link'], 'logseq://graph/My%20Graph%20%26%20notes?page=A+%26+B')
+
     def test_supported_roots_individually(self):
         for root in ('pages', 'journals'):
             graph = self.root / root

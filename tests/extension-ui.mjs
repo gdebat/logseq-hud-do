@@ -53,6 +53,7 @@ await Promise.resolve();
 assert.equal(hud._indicator.children[0].children[0].icon_name, 'checkbox-checked-symbolic');
 assert.equal(hud._count.text, '0');
 assert.equal(timers.size, 2);
+assert.equal(hud._indicator.menu.children[1].reactive, true);
 const task = {content: '<literal>', graph: 'Graph', source_page: 'Page', scheduled: null, priority: null, status: 'TODO', deep_link: 'logseq://graph/Graph?page=Page'};
 hud._data = {today: [task, {...task, content: 'Second', status: 'DOING', priority: 'A'}], overdue: [], upcoming: []};
 hud._render();
@@ -64,6 +65,32 @@ assert.equal(buttons[1].children[0].children[1].children[0].text, '◴ DOING');
 assert.equal(buttons[1].children[0].children[1].children[1].text, 'High');
 buttons[0].handlers.clicked();
 assert.match(hud._message.label.text, /Install Logseq/);
+let launched;
+let closed = false;
+const launchContext = {};
+context.global = {create_app_launch_context: (timestamp, workspace) => {
+    assert.equal(timestamp, 0);
+    assert.equal(workspace, -1);
+    return launchContext;
+}};
+context.Gio.AppInfo.get_default_for_uri_scheme = scheme => {
+    assert.equal(scheme, 'logseq');
+    return {launch_uris(uris, suppliedContext) {
+        launched = Array.from(uris);
+        assert.equal(suppliedContext, launchContext);
+    }};
+};
+hud._indicator.menu.close = () => { closed = true; };
+buttons[0].handlers.clicked();
+assert.deepEqual(launched, [task.deep_link]);
+assert(closed);
+context.Gio.AppInfo.get_default_for_uri_scheme = () => ({launch_uris() { throw new Error('Launch failed'); }});
+buttons[0].handlers.clicked();
+assert.match(hud._message.label.text, /Launch failed/);
+hud._addTask({...task, deep_link: null});
+hud._rows.children.at(-1).handlers.clicked();
+assert.match(hud._message.label.text, /No Logseq link/);
+
 assert.equal(hud._rows.children[3].text, 'OVERDUE (0)');
 values['show-overdue'] = false;
 values['show-today-count'] = false;
