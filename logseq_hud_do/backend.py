@@ -12,7 +12,7 @@ from urllib.parse import urlencode, quote
 import uuid
 
 VERSION = 3
-GRAPH_ROOTS = ('pages', 'journals')
+GRAPH_ROOTS = tuple(json.loads(Path(__file__).with_name('graph-roots.json').read_text()))
 STATUSES = ('TODO', 'DOING')
 PRIORITIES = ('A', 'B', 'C')
 BLOCK = re.compile(r'^(\s*)-\s+(.*)$')
@@ -155,7 +155,7 @@ def cached_records(payload, graph, relative):
                     return None
             if record['graph'] != graph or record['source_file'] != relative:
                 return None
-            if record.get('status') not in ('TODO', 'DOING') or record.get('priority', '') not in ('A', 'B', 'C', None):
+            if record.get('status') not in STATUSES or record.get('priority', '') not in (*PRIORITIES, None):
                 return None
             for key in ('scheduled', 'deadline', 'journal_date'):
                 if key not in record or (record[key] is not None and

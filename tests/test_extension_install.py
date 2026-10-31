@@ -10,6 +10,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ExtensionInstallTests(unittest.TestCase):
+    def test_standalone_installer_bundles_root_vocabulary(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            env = dict(os.environ, HOME=temp, XDG_DATA_HOME=str(home / 'data'))
+            subprocess.run(['sh', str(ROOT / 'scripts/install.sh')], env=env, check=True)
+            subprocess.run([str(home / '.local/bin/logseq-hud-do'), '--help'],
+                           cwd=home, env=env, check=True, capture_output=True)
+
     def test_installed_backend_and_settings(self):
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp)

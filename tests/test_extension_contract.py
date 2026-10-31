@@ -69,6 +69,13 @@ for (const key of ['refresh-interval', 'horizon']) {
                     (graph / name).mkdir()
                 scan([(graph, 'Fixture')], base / 'cache')
 
+    def test_unsupported_graph_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            graph = Path(tmp) / 'graph'
+            (graph / 'unsupported').mkdir(parents=True)
+            with self.assertRaisesRegex(ValueError, 'invalid graph directory'):
+                scan([(graph, 'Fixture')], Path(tmp) / 'cache')
+
     def test_installer_versions(self):
         supported = json.loads((ROOT / 'extension/metadata.json').read_text())['shell-version']
         self.assertEqual(supported, ['46', '47', '48', '49', '50'])

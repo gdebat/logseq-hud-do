@@ -9,8 +9,10 @@ class Widget {
 }
 const xml = fs.readFileSync('extension/schemas/org.gnome.shell.extensions.logseq-hud-do.gschema.xml', 'utf8');
 const ranges = Object.fromEntries([...xml.matchAll(/<key name="([^"]+)"[^>]*>.*?<range min="(\d+)" max="(\d+)"/g)].map(m => [m[1], [+m[2], +m[3]]]));
-const graphRoots = JSON.parse(process.argv[2] || '["pages","journals"]');
+const sharedRoots = JSON.parse(fs.readFileSync('logseq_hud_do/graph-roots.json', 'utf8'));
+const graphRoots = process.argv[2] ? JSON.parse(process.argv[2]) : sharedRoots;
 let roots = {};
+const queriedRoots = new Set();
 const bindings = [];
 let saved = 0;
 const settings = {
@@ -20,12 +22,13 @@ const settings = {
     bind: (key, row) => bindings.push([key, row]),
 };
 const context = vm.createContext({
+    TextDecoder,
     Adw: {PreferencesPage: Widget, PreferencesGroup: Widget, ActionRow: Widget, EntryRow: Widget, SpinRow: Widget, SwitchRow: Widget},
     Gtk: {Button: Widget, Adjustment: Widget, Align: {CENTER: 0}},
     GLib: {path_is_absolute: path => path.startsWith('/'), Variant: class {}},
     Gio: {SettingsBindFlags: {DEFAULT: 0}, FileQueryInfoFlags: {NOFOLLOW_SYMLINKS: 1}, FileType: {DIRECTORY: 2},
-        File: {new_for_path: () => ({query_exists: () => true, get_child: name => ({query_file_type: flags => {assert.equal(flags, 1); return roots[name];}})})}},
-    ExtensionPreferences: class {getSettings() {return settings;}},
+        File: {new_for_path: path => ({load_contents: () => [true, fs.readFileSync(path)], query_exists: () => true, get_child: name => (queriedRoots.add(name), {query_file_type: flags => {assert.equal(flags, 1); return roots[name];}})})}},
+    ExtensionPreferences: class {path = '.'; getSettings() {return settings;}},
 });
 vm.runInContext(fs.readFileSync('extension/prefs.js', 'utf8').replace(/^import .*;\n/gm, '').replace('export default class Preferences', 'globalThis.Prefs = class Preferences'), context);
 const window = new Widget();
@@ -36,7 +39,7 @@ assert.equal(bindings.filter(([, row]) => row.adjustment).length, 2);
 const graphs = window.children[0].children[0];
 const entry = graphs.children[0];
 const addRow = graphs.children[2];
-for (const fixture of [...graphRoots.map(name => ({[name]: 3})), Object.fromEntries(graphRoots.map(name => [name, 3])), {}, {unsupported: 2}]) {
+for (const fixture of [...graphRoots.map(name => ({[name]: 3})), Object.fromEntries(graphRoots.map(name => [name, 3])), {}, {unsupported: 2}, ...sharedRoots.filter(name => !graphRoots.includes(name)).map(name => ({[name]: 2}))]) {
     roots = fixture;
     entry.text = '/fixture';
     addRow.children[0].handlers.clicked();
@@ -49,4 +52,5 @@ for (const name of graphRoots) {
     addRow.children[0].handlers.clicked();
 }
 assert.equal(saved, graphRoots.length);
+assert.deepEqual([...queriedRoots].sort(), [...graphRoots].sort());
 console.log('Preferences bounds and graph validation passed');

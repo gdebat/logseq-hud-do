@@ -6,6 +6,8 @@ import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/ex
 
 export default class Preferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
+        const [, contents] = Gio.File.new_for_path(`${this.path}/logseq_hud_do/graph-roots.json`).load_contents(null);
+        const graphRoots = JSON.parse(new TextDecoder().decode(contents));
         const settings = this.getSettings();
         const page = new Adw.PreferencesPage({title: 'Logseq HUD Do', icon_name: 'view-list-symbolic'});
         window.add(page);
@@ -41,7 +43,7 @@ export default class Preferences extends ExtensionPreferences {
             const path = entry.text.trim();
             const directory = Gio.File.new_for_path(path);
             if (!GLib.path_is_absolute(path) || !directory.query_exists(null) ||
-                !['pages', 'journals'].some(child => directory.get_child(child).query_file_type(Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null) === Gio.FileType.DIRECTORY)) {
+                !graphRoots.some(child => directory.get_child(child).query_file_type(Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null) === Gio.FileType.DIRECTORY)) {
                 addRow.subtitle = 'Enter an existing absolute graph directory with non-symlink pages/ or journals/.';
                 return;
             }

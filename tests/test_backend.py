@@ -268,6 +268,42 @@ class BackendTests(unittest.TestCase):
                 self.assertEqual(result['today'][0]['content'], 'original')
                 self.assertEqual(self.scan()[1]['parsed'], 0)
 
+    def test_parser_vocabulary_survives_cache(self):
+        from logseq_hud_do.backend import STATUSES, PRIORITIES
+        self.write('pages/a.md', '\n'.join(
+            f'- {status} ' + (f'[#{priority}] ' if priority else '') +
+            'task\n  SCHEDULED: <2026-10-31>'
+            for status in STATUSES for priority in (*PRIORITIES, None)))
+        cold, stats = self.scan()
+        self.assertEqual(stats['parsed'], 1)
+        self.assertEqual(len(cold['today']), len(STATUSES) * (len(PRIORITIES) + 1))
+        warm, stats = self.scan()
+        self.assertEqual(stats['parsed'], 0)
+        self.assertEqual(stats['reused'], 1)
+        self.assertEqual(warm, cold)
+
+    def test_cache_vocabulary_tracks_parser_owner(self):
+        from logseq_hud_do import backend
+        record = parse('- TODO task', str(self.graph), 'pages/a.md')[0]
+        for field, owner, added in [('status', 'STATUSES', 'WAITING'),
+                                     ('priority', 'PRIORITIES', 'D')]:
+            values = getattr(backend, owner)
+            for value in (*values, added, None, ''):
+                candidate = dict(record, **{field: value})
+                payload = json.dumps([candidate])
+                with self.subTest(field=field, value=value):
+                    expected = value in values or (field == 'priority' and value is None)
+                    self.assertEqual(backend.cached_records(payload, str(self.graph), 'pages/a.md') is not None, expected)
+                    with patch.object(backend, owner, (*values, added)):
+                        if value == added:
+                            self.assertIsNotNone(backend.cached_records(payload, str(self.graph), 'pages/a.md'))
+                    if value in values:
+                        with patch.object(backend, owner, tuple(v for v in values if v != value)):
+                            self.assertIsNone(backend.cached_records(payload, str(self.graph), 'pages/a.md'))
+            candidate = dict(record)
+            del candidate[field]
+            self.assertIsNone(backend.cached_records(json.dumps([candidate]), str(self.graph), 'pages/a.md'))
+
     def test_modified_records_replace_persisted_output(self):
         self.write('pages/a.md', '- TODO original\n  SCHEDULED: <2026-10-30 Fri>')
         self.scan()
