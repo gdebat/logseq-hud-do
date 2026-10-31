@@ -11,11 +11,12 @@ import time
 from urllib.parse import urlencode, quote
 import uuid
 
-VERSION = 2
+VERSION = 3
 GRAPH_ROOTS = ('pages', 'journals')
 BLOCK = re.compile(r'^(\s*)-\s+(.*)$')
 TASK = re.compile(r'^(TODO|DOING)(?:\s+|$)(.*)')
-DATE = re.compile(r'^(SCHEDULED|DEADLINE):\s*<([^>]+)>\s*$')
+SCHEDULING_FIELD = re.compile(r'(SCHEDULED|DEADLINE):\s*')
+TIMESTAMP = re.compile(r'<([^>]*)>(?:\s+|$)')
 PRIORITY = re.compile(r'\[#([ABC])\]')
 ID = re.compile(r'^\s*id::\s*([\w-]+)\s*$')
 
@@ -76,13 +77,19 @@ def parse(text, graph, relative):
             continue
         owner = stack[-1][1] if stack else None
         if owner is not None:
-            scheduling = DATE.fullmatch(body) if not match else None
+            scheduling = SCHEDULING_FIELD.match(body) if not match else None
             if scheduling:
-                kind, timestamp = scheduling.groups()
-                value = timestamp.split()[0] if timestamp.split() else ''
-                if not date_value(value):
-                    raise ValueError(f'{graph}/{relative}:{number}: invalid {kind} date: {timestamp}')
-                owner['scheduled' if kind == 'SCHEDULED' else 'deadline'] = value
+                remaining = body
+                while scheduling:
+                    kind = scheduling[1]
+                    timestamp = TIMESTAMP.match(remaining, scheduling.end())
+                    value = timestamp[1].split()[0] if timestamp and timestamp[1].split() else ''
+                    rest = remaining[timestamp.end():] if timestamp else ''
+                    next_field = SCHEDULING_FIELD.match(rest)
+                    if not date_value(value) or (rest and not next_field):
+                        raise ValueError(f'{graph}/{relative}:{number}: invalid {kind} date: {remaining}')
+                    owner['scheduled' if kind == 'SCHEDULED' else 'deadline'] = value
+                    remaining, scheduling = rest, next_field
             elif not match and not re.match(r'^\w+::', body):
                 owner['content'] += '\n' + body
             identifier = ID.match(line)

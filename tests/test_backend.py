@@ -175,6 +175,77 @@ class BackendTests(unittest.TestCase):
                 with sqlite3.connect(self.cache) as db:
                     self.assertEqual(db.execute('SELECT count(*) FROM files').fetchone()[0], 0)
 
+    def test_combined_scheduling_cold_warm(self):
+        for reverse in (False, True):
+            with self.subTest(reverse=reverse):
+                lines = []
+                for category, day in [('today', '2026-10-31'), ('overdue', '2026-10-30'), ('upcoming', '2026-11-07')]:
+                    fields = [f'SCHEDULED: <{day}>', 'DEADLINE: <2026-11-02 Mon>']
+                    if reverse:
+                        fields.reverse()
+                    lines.extend([f'- TODO {category}', '  ' + ' '.join(fields)])
+                self.write('pages/a.md', '\n'.join(lines))
+                for expected in (1, 0):
+                    result, stats = self.scan()
+                    self.assertEqual(stats['parsed'], expected)
+                    for category, day in [('today', '2026-10-31'), ('overdue', '2026-10-30'), ('upcoming', '2026-11-07')]:
+                        self.assertEqual(len(result[category]), 1)
+                        task = result[category][0]
+                        self.assertEqual(task['content'], category)
+                        self.assertEqual(task['scheduled'], day)
+                        self.assertEqual(task['deadline'], '2026-11-02')
+
+    def test_malformed_scheduling_error_channel(self):
+        self.scan()
+        for field in ('SCHEDULED', 'DEADLINE'):
+            for value in ('<>', '<2026-02-30 Mon> trailing', '', '2026-10-31', '<not-a-date>', '<2026-10-31'):
+                for prefix in ('', 'DEADLINE: <2026-11-02> ' if field == 'SCHEDULED' else 'SCHEDULED: <2026-10-31> '):
+                    with self.subTest(field=field, value=value, prefix=prefix):
+                        self.write('journals/2026_10_31.md', f'- TODO invalid\n  {prefix}{field}: {value}')
+                        with self.assertRaisesRegex(ValueError, f'2026_10_31.md:2: invalid {field}'):
+                            self.scan()
+                        result = subprocess.run([sys.executable, '-m', 'logseq_hud_do', '--graph', str(self.graph), '--cache', str(self.cache)], capture_output=True, text=True)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertEqual(result.stdout, '')
+                        self.assertIn(f'invalid {field}', json.loads(result.stderr)['error'])
+                        with sqlite3.connect(self.cache) as db:
+                            self.assertEqual(db.execute('SELECT count(*) FROM files').fetchone()[0], 0)
+
+    def test_malformed_dates_in_prose_and_non_task_blocks(self):
+        text = '- TODO discuss SCHEDULED: <>\n  discuss DEADLINE: <2026-02-30>\n  - child\n    SCHEDULED: <>\n- note\n  DEADLINE: <>\n'
+        tasks = parse(text, 'g', 'pages/a.md')
+        self.assertEqual(tasks[0]['content'], 'discuss SCHEDULED: <>\ndiscuss DEADLINE: <2026-02-30>')
+        self.assertIsNone(tasks[0]['scheduled'])
+        self.assertIsNone(tasks[0]['deadline'])
+
+    def test_previous_parser_cache_upgrade(self):
+        for version in (1, 2):
+            with self.subTest(version=version):
+                relative = 'journals/2026_10_31.md'
+                self.write(relative, '- TODO original\n  full instructions\n  SCHEDULED: <2026-10-31> DEADLINE: <2026-11-02>')
+                metadata = (self.graph / relative).stat()
+                old = dict(id='old-parser-id', content='original', status='TODO', priority=None,
+                           scheduled=None, deadline=None, graph=str(self.graph), source_file=relative,
+                           source_page='2026_10_31', journal_date='2026-10-31',
+                           block_location={'line': 1}, block_uuid=None)
+                with sqlite3.connect(self.cache) as db:
+                    db.execute('CREATE TABLE IF NOT EXISTS files (graph TEXT, path TEXT, mtime INTEGER, size INTEGER, tasks TEXT, PRIMARY KEY(graph,path))')
+                    db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?)', (str(self.graph), relative, metadata.st_mtime_ns, metadata.st_size, json.dumps([old])))
+                    db.execute(f'PRAGMA user_version={version}')
+                for expected in (1, 0):
+                    result, stats = self.scan()
+                    self.assertEqual(stats['parsed'], expected)
+                    self.assertEqual(stats['reused'], 1 - expected)
+                    task = result['today'][0]
+                    self.assertEqual(task['content'], 'original\nfull instructions')
+                    self.assertEqual(task['scheduled'], '2026-10-31')
+                    self.assertEqual(task['deadline'], '2026-11-02')
+                    with sqlite3.connect(self.cache) as db:
+                        self.assertGreater(db.execute('PRAGMA user_version').fetchone()[0], version)
+                        stored = json.loads(db.execute('SELECT tasks FROM files').fetchone()[0])[0]
+                    for field in ('content', 'scheduled', 'deadline'):
+                        self.assertEqual(stored[field], task[field])
+
     def test_malformed_cached_records_reparsed(self):
         self.write('journals/2026_10_31.md', '- TODO original')
         self.scan()

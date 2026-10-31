@@ -43,6 +43,8 @@ parses blocks line by line, and stores raw extraction records in SQLite keyed
 by canonical graph directory and relative path. Metadata belongs to its nearest
 block, including non-task children. Fenced code is ignored. Scheduling dates
 and deadlines on owned metadata lines are retained without expanding recurrence.
+Both fields may share one metadata line, in either order. Malformed task-owned
+scheduling values fail the refresh; date mentions within ordinary prose remain content.
 Owned non-metadata continuation lines are preserved in task content.
 
 Nanosecond mtime and size determine reuse. One transaction covers each refresh;
