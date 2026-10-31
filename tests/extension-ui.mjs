@@ -61,6 +61,8 @@ assert.equal(hud._rows.children[0].text, 'TODAY (2)');
 const buttons = hud._rows.children.filter(child => child instanceof St.Button);
 assert.equal(buttons[0].children[0].children.length, 2);
 assert.equal(buttons[0].children[0].children[0].text, '<literal>');
+assert.equal(buttons[0].children[0].children[0].style_class, undefined);
+assert.equal(buttons[0].children[0].children.at(-1).style_class, 'hud-context');
 assert.equal(buttons[1].children[0].children[1].children[0].text, '◴ DOING');
 assert.equal(buttons[1].children[0].children[1].children[1].text, 'High');
 buttons[0].handlers.clicked();
@@ -75,16 +77,19 @@ context.global = {create_app_launch_context: (timestamp, workspace) => {
 }};
 context.Gio.AppInfo.get_default_for_uri_scheme = scheme => {
     assert.equal(scheme, 'logseq');
-    return {launch_uris(uris, suppliedContext) {
-        launched = Array.from(uris);
-        assert.equal(suppliedContext, launchContext);
-    }};
+    return {};
 };
+context.Gio.AppInfo.launch_default_for_uri_async = (uri, suppliedContext, cancellable, callback) => {
+    launched = [uri];
+    assert.equal(suppliedContext, launchContext);
+    callback(null, {});
+};
+context.Gio.AppInfo.launch_default_for_uri_finish = () => true;
 hud._indicator.menu.close = () => { closed = true; };
 buttons[0].handlers.clicked();
 assert.deepEqual(launched, [task.deep_link]);
 assert(closed);
-context.Gio.AppInfo.get_default_for_uri_scheme = () => ({launch_uris() { throw new Error('Launch failed'); }});
+context.Gio.AppInfo.launch_default_for_uri_finish = () => { throw new Error('Launch failed'); };
 buttons[0].handlers.clicked();
 assert.match(hud._message.label.text, /Launch failed/);
 hud._addTask({...task, deep_link: null});

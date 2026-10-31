@@ -86,6 +86,7 @@ Without a UUID, identifiers hash graph, file, original task text, status and
 same-text occurrence. They survive unrelated inserted lines, but changing task
 text/status, moving files, or reordering identical tasks can change identity.
 Duplicate block UUIDs within a graph return the first source occurrence.
+See [navigation diagnostics and manual acceptance](docs/navigation-acceptance.md).
 Deep links depend on Logseq's registered desktop protocol and graph basename;
 the backend does not launch Logseq or verify protocol registration.
 
@@ -122,7 +123,8 @@ The scrollable dropdown preserves backend order within TODAY, OVERDUE, UPCOMING.
 Only DOING gets a status badge. Priority badges are High (red), Medium (amber),
 Low (blue); absent priorities have no badge. Text is displayed literally.
 Rows include graph and date/page context. Colors use explicit contrasting
-foreground/background pairs while ordinary text inherits the Shell theme.
+foreground/background pairs while ordinary text inherits the Shell theme. Graph/page context uses 80%
+opacity of that theme foreground; task descriptions retain full opacity.
 
 Refresh occurs on open, manually, periodically, after settings changes, and at
 local midnight. Concurrent requests coalesce into one follow-up scan. Disabling

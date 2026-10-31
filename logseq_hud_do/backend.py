@@ -8,10 +8,10 @@ from pathlib import Path
 import re
 import sqlite3
 import time
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode, quote, unquote
 import uuid
 
-VERSION = 3
+VERSION = 4
 GRAPH_ROOTS = tuple(json.loads(Path(__file__).with_name('graph-roots.json').read_text()))
 STATUSES = ('TODO', 'DOING')
 PRIORITIES = ('A', 'B', 'C')
@@ -20,7 +20,7 @@ TASK = re.compile(r'^(' + '|'.join(map(re.escape, STATUSES)) + r')(?:\s+|$)(.*)'
 SCHEDULING_FIELD = re.compile(r'(SCHEDULED|DEADLINE):\s*')
 TIMESTAMP = re.compile(r'<([^>]*)>(?:\s+|$)')
 PRIORITY = re.compile(r'\[#(' + '|'.join(map(re.escape, PRIORITIES)) + r')\]')
-ID = re.compile(r'^\s*id::\s*([\w-]+)\s*$')
+ID = re.compile(r'^\s*id::\s*(.*?)\s*$')
 
 
 def date_value(value):
@@ -42,8 +42,25 @@ def journal_date(path):
     return None
 
 
+def page_name(text, relative):
+    for line in text.splitlines():
+        if BLOCK.match(line):
+            break
+        title = re.match(r'^title::\s*(.+?)\s*$', line)
+        if title:
+            return title[1]
+    date = journal_date(relative)
+    if date:
+        day = dt.date.fromisoformat(date)
+        suffix = 'th' if 10 <= day.day % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(day.day % 10, 'th')
+        month = ('Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec').split()[day.month - 1]
+        return f'{month} {day.day}{suffix}, {day.year}'
+    return unquote(Path(relative).stem.replace('___', '/'))
+
+
 def parse(text, graph, relative):
     tasks, stack, occurrences = [], [], {}
+    source_page = page_name(text, relative)
     fence = None
     for number, line in enumerate(text.splitlines(), 1):
         match = BLOCK.match(line)
@@ -68,8 +85,8 @@ def parse(text, graph, relative):
                 task = dict(id=hashlib.sha256(identity.encode()).hexdigest(), content=content,
                             status=status, priority=priority[1] if priority else None,
                             scheduled=None, deadline=None, graph=graph, source_file=relative,
-                            source_page=Path(relative).stem, journal_date=journal_date(relative),
-                            block_location={'line': number}, block_uuid=None)
+                            source_page=source_page, journal_date=journal_date(relative),
+                            block_location={'line': number}, block_uuid=None, block_reference_status='missing')
                 tasks.append(task)
             stack.append((indent, task))
         elif stack and line.strip() and len(line) - len(line.lstrip()) <= stack[-1][0]:
@@ -98,9 +115,10 @@ def parse(text, graph, relative):
             if identifier:
                 try:
                     owner['block_uuid'] = str(uuid.UUID(identifier[1]))
+                    owner['block_reference_status'] = 'valid'
                     owner['id'] = graph + ':' + owner['block_uuid']
                 except ValueError:
-                    pass
+                    owner['block_reference_status'] = 'invalid'
     return tasks
 
 
@@ -164,6 +182,8 @@ def cached_records(payload, graph, relative):
             location = record.get('block_location')
             if not isinstance(location, dict) or type(location.get('line')) is not int or location['line'] < 1:
                 return None
+            if record.get('block_reference_status') not in ('missing', 'invalid', 'valid'):
+                return None
             if 'block_uuid' not in record:
                 return None
             if record['block_uuid'] is not None:
@@ -215,6 +235,7 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
     connection = connect(cache)
     stats = dict(discovered=0, parsed=0, reused=0, removed=0, extracted_tasks=0)
     tasks = []
+    navigation = []
     try:
         for graph, name in resolved:
             graph_id = str(graph)
@@ -242,10 +263,17 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
                     connection.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?)',
                                        (graph_id, relative, before.st_mtime_ns, before.st_size, json.dumps(records)))
                     stats['parsed'] += 1
+                records = [dict(record) for record in records]
+                block_states = [r.pop('block_reference_status', 'missing') for r in records]
                 for record in records:
                     record['graph'] = name or graph.name
                     target = record['block_uuid'] or record['source_page']
                     record['deep_link'] = 'logseq://graph/' + quote(graph.name, safe='') + '?' + urlencode({'block-id' if record['block_uuid'] else 'page': target})
+                navigation.extend(dict(graph_path=graph_id, graph_identifier=graph.name,
+                                       source_file=relative, page=r['source_page'],
+                                       block_uuid=r['block_uuid'], block_reference_status=state,
+                                       target='block' if r['block_uuid'] else 'page',
+                                       deep_link=r['deep_link']) for r, state in zip(records, block_states))
                 tasks.extend(records)
             for relative in cached.keys() - current.keys():
                 connection.execute('DELETE FROM files WHERE graph=? AND path=?', (graph_id, relative))
@@ -256,6 +284,7 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
         raise
     finally:
         connection.close()
+    stats['navigation'] = navigation
     stats['extracted_tasks'] = len(tasks)
     stats['cache_hit_ratio'] = stats['reused'] / stats['discovered'] if stats['discovered'] else 0
     stats['duration_seconds'] = time.perf_counter() - started

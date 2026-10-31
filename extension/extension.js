@@ -165,9 +165,17 @@ export default class LogseqHudDo extends Extension {
                     throw new Error('No Logseq link is available for this task.');
                 const app = Gio.AppInfo.get_default_for_uri_scheme('logseq');
                 if (!app)
-                    throw new Error('Install Logseq and register its logseq:// protocol.');
-                app.launch_uris([view.uri], global.create_app_launch_context(0, -1));
-                this._indicator.menu.close();
+                    throw new Error('URI handler registration missing. Install Logseq and register its logseq:// protocol.');
+                Gio.AppInfo.launch_default_for_uri_async(view.uri,
+                    global.create_app_launch_context(0, -1), null, (_source, result) => {
+                        try {
+                            Gio.AppInfo.launch_default_for_uri_finish(result);
+                            this._indicator?.menu.close();
+                        } catch (error) {
+                            if (this._indicator)
+                                this._showMessage(`URI activation failed (${view.uri}): ${error.message}`);
+                        }
+                    });
             } catch (error) {
                 this._showMessage(`Unable to open Logseq: ${error.message}`);
             }

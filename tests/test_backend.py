@@ -350,7 +350,7 @@ class BackendTests(unittest.TestCase):
         self.write('journals/2026_10_31.md', f'- TODO block\n  id:: {identifier}\n- TODO page')
         for _ in range(2):
             result, _ = self.scan()
-            self.assertEqual([t['deep_link'] for t in result['today']], [f'logseq://graph/graph?block-id={identifier}', 'logseq://graph/graph?page=2026_10_31'])
+            self.assertEqual([t['deep_link'] for t in result['today']], [f'logseq://graph/graph?block-id={identifier}', 'logseq://graph/graph?page=Oct+31st%2C+2026'])
 
     def test_deep_links_encode_graph_and_page_without_display_alias(self):
         graph = self.root / 'My Graph & notes'
@@ -361,6 +361,31 @@ class BackendTests(unittest.TestCase):
             task = result['today'][0]
             self.assertEqual(task['graph'], 'Display alias')
             self.assertEqual(task['deep_link'], 'logseq://graph/My%20Graph%20%26%20notes?page=A+%26+B')
+
+    def test_og_page_resolution_examples(self):
+        examples = [
+            ('pages/Work___Projects.md', '- TODO task', 'Work/Projects', 'Work%2FProjects'),
+            ('pages/A%3F B%23 C%25.md', '- TODO task', 'A? B# C%', 'A%3F+B%23+C%25'),
+            ('pages/filename.md', 'title:: Real & title\n- TODO task', 'Real & title', 'Real+%26+title'),
+        ]
+        for relative, text, page, encoded in examples:
+            with self.subTest(relative=relative):
+                self.write(relative, text + '\n  SCHEDULED: <2026-10-31 Sat>')
+                for _ in range(2):
+                    result, diagnostics = self.scan()
+                    task = next(t for t in result['today'] if t['source_file'] == relative)
+                    self.assertEqual(task['source_page'], page)
+                    self.assertEqual(task['deep_link'], 'logseq://graph/graph?page=' + encoded)
+                    self.assertTrue(diagnostics['navigation'])
+
+    def test_invalid_block_reference_falls_back_without_using_task_hash(self):
+        self.write('journals/2026_10_31.md', '- TODO task\n  id:: not-a-uuid')
+        for _ in range(2):
+            result, diagnostics = self.scan()
+            task = result['today'][0]
+            self.assertIsNone(task['block_uuid'])
+            self.assertEqual(task['deep_link'], 'logseq://graph/graph?page=Oct+31st%2C+2026')
+            self.assertEqual(diagnostics['navigation'][0]['block_reference_status'], 'invalid')
 
     def test_supported_roots_individually(self):
         for root in ('pages', 'journals'):
