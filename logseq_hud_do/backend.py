@@ -1,0 +1,240 @@
+"""Line-oriented extraction and transactional incremental indexing."""
+import datetime as dt
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import sqlite3
+import time
+from urllib.parse import urlencode, quote
+import uuid
+
+VERSION = 1
+BLOCK = re.compile(r'^(\s*)-\s+(.*)$')
+TASK = re.compile(r'^(TODO|DOING)(?:\s+|$)(.*)')
+DATE = re.compile(r'\b(SCHEDULED|DEADLINE):\s*<([0-9]{4}-[0-9]{2}-[0-9]{2})[^>]*>')
+PRIORITY = re.compile(r'\[#([ABC])\]')
+ID = re.compile(r'^\s*id::\s*([\w-]+)\s*$')
+
+
+def date_value(value):
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def journal_date(path):
+    if Path(path).parts[0] != 'journals':
+        return None
+    stem = Path(path).stem
+    for pattern in ('%Y_%m_%d', '%Y-%m-%d', '%b %d, %Y', '%B %d, %Y'):
+        try:
+            return dt.datetime.strptime(stem, pattern).date().isoformat()
+        except ValueError:
+            pass
+    return None
+
+
+def parse(text, graph, relative):
+    tasks, stack, occurrences = [], [], {}
+    fence = None
+    for number, line in enumerate(text.splitlines(), 1):
+        match = BLOCK.match(line)
+        body = match[2] if match else line.strip()
+        fence_match = re.match(r'(`{3,}|~{3,})', body)
+        if fence is not None:
+            if fence_match and fence_match[1][0] == fence[0] and len(fence_match[1]) >= len(fence):
+                fence = None
+            continue
+        if match:
+            indent = len(match[1].expandtabs(4))
+            while stack and stack[-1][0] >= indent:
+                stack.pop()
+            task_match = TASK.match(body)
+            task = None
+            if task_match:
+                status, content = task_match.groups()
+                priority = PRIORITY.search(content)
+                key = status + '\0' + content
+                occurrences[key] = occurrences.get(key, 0) + 1
+                identity = '\0'.join((graph, relative, key, str(occurrences[key])))
+                task = dict(id=hashlib.sha256(identity.encode()).hexdigest(), content=content,
+                            status=status, priority=priority[1] if priority else None,
+                            scheduled=None, deadline=None, graph=graph, source_file=relative,
+                            source_page=Path(relative).stem, journal_date=journal_date(relative),
+                            block_location={'line': number}, block_uuid=None)
+                tasks.append(task)
+            stack.append((indent, task))
+        elif stack and line.strip() and len(line) - len(line.lstrip()) <= stack[-1][0]:
+            stack.clear()
+        if fence_match:
+            fence = fence_match[1]
+            continue
+        owner = stack[-1][1] if stack else None
+        if owner is not None:
+            for kind, value in DATE.findall(body):
+                if date_value(value):
+                    owner['scheduled' if kind == 'SCHEDULED' else 'deadline'] = value
+            identifier = ID.match(line)
+            if identifier:
+                try:
+                    owner['block_uuid'] = str(uuid.UUID(identifier[1]))
+                    owner['id'] = graph + ':' + owner['block_uuid']
+                except ValueError:
+                    pass
+    return tasks
+
+
+def discover(graph):
+    files = {}
+    for name in ('pages', 'journals'):
+        folder = graph / name
+        if folder.is_symlink():
+            continue
+        if not folder.exists():
+            continue
+        def onerror(error):
+            raise error
+        for root, dirs, names in os.walk(folder, followlinks=False, onerror=onerror):
+            dirs[:] = sorted(d for d in dirs if not (Path(root) / d).is_symlink())
+            for name in sorted(names):
+                path = Path(root) / name
+                if path.suffix.lower() != '.md' or path.is_symlink() or not path.is_file():
+                    continue
+                stat = path.stat()
+                files[path.relative_to(graph).as_posix()] = (stat.st_mtime_ns, stat.st_size)
+    return files
+
+
+def connect(cache):
+    connection = sqlite3.connect(cache, timeout=30)
+    try:
+        if connection.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+            raise sqlite3.DatabaseError('cache integrity check failed')
+        connection.execute('BEGIN IMMEDIATE')
+        version = connection.execute('PRAGMA user_version').fetchone()[0]
+        if version != VERSION:
+            connection.execute('DROP TABLE IF EXISTS files')
+            connection.execute(f'PRAGMA user_version={VERSION}')
+        connection.execute('CREATE TABLE IF NOT EXISTS files (graph TEXT, path TEXT, mtime INTEGER, size INTEGER, tasks TEXT, PRIMARY KEY(graph,path))')
+        return connection
+    except Exception:
+        connection.close()
+        raise
+
+
+def classify(tasks, today, horizon):
+    result = dict(today=[], overdue=[], upcoming=[])
+    seen = set()
+    for task in tasks:
+        if task['id'] in seen:
+            continue
+        seen.add(task['id'])
+        scheduled = date_value(task['scheduled']) if task['scheduled'] else None
+        category = None
+        if scheduled:
+            delta = (scheduled - today).days
+            category = 'today' if delta == 0 else 'overdue' if delta < 0 else 'upcoming' if delta <= horizon else None
+        elif not task['deadline'] and task['journal_date'] == today.isoformat():
+            category = 'today'
+        if category:
+            result[category].append(task)
+    for category, items in result.items():
+        items.sort(key=lambda t: (t['status'] != 'DOING', {'A': 0, 'B': 1, 'C': 2, None: 3}[t['priority']],
+                                 t['scheduled'] or '' if category != 'today' else '',
+                                 t['graph'], t['source_file'], t['block_location']['line'], t['id']))
+    return result
+
+
+def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
+    started = time.perf_counter()
+    if horizon < 0:
+        raise ValueError('horizon must be nonnegative')
+    resolved = [(Path(path).expanduser().resolve(), name) for path, name in graphs]
+    if not resolved or len({str(p) for p, _ in resolved}) != len(resolved):
+        raise ValueError('configure at least one distinct graph directory')
+    for path, _ in resolved:
+        if not path.is_dir() or not any((path / part).is_dir() for part in ('pages', 'journals')):
+            raise ValueError(f'invalid graph directory: {path}')
+    cache = Path(cache).expanduser().resolve()
+    if any(cache.is_relative_to(path) for path, _ in resolved):
+        raise ValueError('cache must be outside graph directories')
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    connection = connect(cache)
+    stats = dict(discovered=0, parsed=0, reused=0, removed=0, extracted_tasks=0)
+    tasks = []
+    try:
+        for graph, name in resolved:
+            graph_id = str(graph)
+            current = discover(graph)
+            cached = {row[0]: row[1:] for row in connection.execute('SELECT path,mtime,size,tasks FROM files WHERE graph=?', (graph_id,))}
+            stats['discovered'] += len(current)
+            for relative, metadata in sorted(current.items()):
+                old = cached.get(relative)
+                if not full_rescan and old and metadata == old[:2]:
+                    records = json.loads(old[2])
+                    stats['reused'] += 1
+                else:
+                    # Refuse symlinks at open as well as discovery; never follow a replaced leaf.
+                    descriptor = open_source(graph, relative)
+                    with os.fdopen(descriptor, 'r', encoding='utf-8', errors='replace') as source:
+                        before = os.fstat(source.fileno())
+                        records = parse(source.read(), graph_id, relative)
+                        after = os.fstat(source.fileno())
+                    if (before.st_mtime_ns, before.st_size) != (after.st_mtime_ns, after.st_size):
+                        raise OSError(f'file changed during scan: {relative}; retry')
+                    connection.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?)',
+                                       (graph_id, relative, before.st_mtime_ns, before.st_size, json.dumps(records)))
+                    stats['parsed'] += 1
+                for record in records:
+                    record['graph'] = name or graph.name
+                    target = record['block_uuid'] or record['source_page']
+                    record['deep_link'] = 'logseq://graph/' + quote(graph.name, safe='') + '?' + urlencode({'block-id' if record['block_uuid'] else 'page': target})
+                tasks.extend(records)
+            for relative in cached.keys() - current.keys():
+                connection.execute('DELETE FROM files WHERE graph=? AND path=?', (graph_id, relative))
+                stats['removed'] += 1
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+    stats['extracted_tasks'] = len(tasks)
+    stats['cache_hit_ratio'] = stats['reused'] / stats['discovered'] if stats['discovered'] else 0
+    stats['duration_seconds'] = time.perf_counter() - started
+    return classify(tasks, today or dt.datetime.now().astimezone().date(), horizon), stats
+
+
+def scan(graphs, cache, **options):
+    cache = Path(cache).expanduser().resolve()
+    for graph, _ in graphs:
+        if cache.is_relative_to(Path(graph).expanduser().resolve()):
+            raise ValueError('cache must be outside graph directories')
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    # The external lock also serializes replacement of a damaged database.
+    with open(str(cache) + '.lock', 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            return _scan(graphs, cache, **options)
+        except sqlite3.DatabaseError as error:
+            if getattr(error, 'sqlite_errorcode', None) not in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB) and str(error) != 'cache integrity check failed':
+                raise
+            cache.unlink(missing_ok=True)
+            return _scan(graphs, cache, **options)
+
+
+def open_source(graph, relative):
+    directory = os.open(graph, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        parts = Path(relative).parts
+        for part in parts[:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        return os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+    finally:
+        os.close(directory)
