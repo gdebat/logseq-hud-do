@@ -158,7 +158,7 @@ for (const modern of [false, true]) {
     assert.equal(modern ? box.orientation : box.vertical, modern ? 1 : true);
     delete Actor.prototype.orientation;
 }
-settings.get_value = () => ({deep_unpack: () => [['/fixture', 'Fixture']]});
+settings.get_value = key => ({deep_unpack: () => key === 'task-block-filters' ? [...defaultBlockFilters, ['BEGIN', 'END']] : [['/fixture', 'Fixture']]});
 context.Clutter.Orientation = {VERTICAL: 1};
 const completions = [];
 let spawned;
@@ -210,13 +210,13 @@ assert.equal(timers.size, 0);
 
 for (const staleError of [false, true]) {
     values.horizon = 7;
-    settings.get_value = () => ({deep_unpack: () => [['/fixture', 'Fixture']]});
+    settings.get_value = key => ({deep_unpack: () => key === 'task-block-filters' ? [...defaultBlockFilters, ['BEGIN', 'END']] : [['/fixture', 'Fixture']]});
     const changing = new context.Hud();
     changing.path = '/extension';
     changing.enable();
     const initialTimer = changing._timer;
     values.horizon = 14;
-    settings.get_value = () => ({deep_unpack: () => [['/updated', 'Updated']]});
+    settings.get_value = key => ({deep_unpack: () => key === 'task-block-filters' ? [...defaultBlockFilters, ['BEGIN', 'END']] : [['/updated', 'Updated']]});
     settings.handlers.changed();
     settings.handlers.changed();
     assert.equal(completions.length, 1);
