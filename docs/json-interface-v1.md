@@ -23,3 +23,9 @@ Errors produce a nonzero exit status and a JSON `error` string on stderr
 and graph roots from the backend owner, passes real CLI output through the
 extension model, checks vocabulary agreement, and drives preferences validation
 with the backend's roots and no-follow semantics.
+
+`source_page` is the resolved Logseq title, including default ordinal journal
+names, explicit `title::`, and decoded namespace filenames. `deep_link` prefers
+a stored block UUID; otherwise it targets that title. Display aliases never
+select the graph. Optional CLI diagnostics include per-task navigation resolution
+without changing task fields. See [manual acceptance](navigation-acceptance.md).

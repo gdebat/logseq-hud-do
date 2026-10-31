@@ -5,7 +5,7 @@
 .hud-context { font-size: 0.85em; padding: 2px 8px; }
 .hud-badges { spacing: 6px; padding-top: 3px; }
 .hud-badge { font-size: 0.85em; font-weight: bold; border-radius: 4px; padding: 2px 6px; }
-.hud-doing { background-color: #1c71d8; color: #ffffff; }
+.hud-doing { background-color: #237b37; color: #ffffff; }
 .hud-high { background-color: #a51d2d; color: #ffffff; }
 .hud-medium { background-color: #f8e45c; color: #241f00; }
 .hud-low { background-color: #1a5fb4; color: #ffffff; }

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {sections, taskPresentation, RefreshController, backendArguments, parseTasks} from '../extension/model.js';
+import {defaultTextFilters, defaultBlockFilters, sections, taskPresentation, RefreshController, backendArguments, parseTasks} from '../extension/model.js';
 
 class Actor {
     constructor(props = {}) { Object.assign(this, props); this.children = []; this.clutter_text = {}; this.handlers = {}; }
@@ -24,9 +24,10 @@ class Indicator extends Actor { constructor() { super(); this.menu = new Menu();
 class Item extends Actor { constructor(text) { super(); this.label = new Actor({text}); } }
 const values = {'refresh-interval': 30, horizon: 7, 'show-overdue': true, 'show-upcoming': true, 'show-today-count': true};
 const settings = new Actor();
+settings.get_strv = () => defaultTextFilters;
 settings.get_boolean = key => values[key];
 settings.get_int = key => values[key];
-settings.get_value = () => ({deep_unpack: () => []});
+settings.get_value = key => ({deep_unpack: () => key === 'task-block-filters' ? [...defaultBlockFilters, ['BEGIN', 'END']] : []});
 const timers = new Map();
 let timerId = 0;
 const now = {add_days: () => now, get_year: () => 2026, get_month: () => 11, get_day_of_month: () => 1, difference: () => 10000000};
@@ -53,18 +54,79 @@ await Promise.resolve();
 assert.equal(hud._indicator.children[0].children[0].icon_name, 'checkbox-checked-symbolic');
 assert.equal(hud._count.text, '0');
 assert.equal(timers.size, 2);
-const task = {content: '<literal>', graph: 'Graph', source_page: 'Page', scheduled: null, priority: null, status: 'TODO', deep_link: 'logseq://graph/Graph?page=Page'};
+assert.equal(hud._indicator.menu.children[1].reactive, true);
+assert.equal(hud._indicator.menu.children[1].track_hover, false);
+assert.equal(hud._indicator.menu.children[1].hover, false);
+assert.equal(hud._indicator.menu.children[1].activate, false);
+const task = {content: '<literal>\nBEGIN\nhidden\nEND', graph: 'Graph', source_page: 'Page', scheduled: null, priority: null, status: 'TODO', deep_link: 'logseq://graph/Graph?page=Page'};
 hud._data = {today: [task, {...task, content: 'Second', status: 'DOING', priority: 'A'}], overdue: [], upcoming: []};
 hud._render();
 assert.equal(hud._rows.children[0].text, 'TODAY (2)');
 const buttons = hud._rows.children.filter(child => child instanceof St.Button);
 assert.equal(buttons[0].children[0].children.length, 2);
 assert.equal(buttons[0].children[0].children[0].text, '<literal>');
+assert.equal(buttons[0].children[0].children[0].style_class, undefined);
+assert.equal(buttons[0].children[0].children.at(-1).style_class, 'hud-context');
+assert.equal(buttons[0].children[0].children.at(-1).opacity, 170);
 assert.equal(buttons[1].children[0].children[1].children[0].text, '◴ DOING');
 assert.equal(buttons[1].children[0].children[1].children[1].text, 'High');
 buttons[0].handlers.clicked();
 assert.match(hud._message.label.text, /Install Logseq/);
+let launched;
+let closed = false;
+const launchContext = {};
+context.global = {create_app_launch_context: (timestamp, workspace) => {
+    assert.equal(timestamp, 0);
+    assert.equal(workspace, -1);
+    return launchContext;
+}};
+context.Gio.AppInfo.get_default_for_uri_scheme = scheme => {
+    assert.equal(scheme, 'logseq');
+    return {};
+};
+context.Gio.AppInfo.launch_default_for_uri_async = (uri, suppliedContext, cancellable, callback) => {
+    launched = [uri];
+    assert.equal(suppliedContext, launchContext);
+    callback(null, {});
+};
+context.Gio.AppInfo.launch_default_for_uri_finish = () => true;
+hud._indicator.menu.close = () => { closed = true; };
+buttons[0].handlers.clicked();
+assert.deepEqual(launched, [task.deep_link]);
+assert(closed);
+context.Gio.AppInfo.launch_default_for_uri_finish = () => { throw new Error('Launch failed'); };
+buttons[0].handlers.clicked();
+assert.match(hud._message.label.text, /Launch failed/);
+hud._addTask({...task, deep_link: null});
+hud._rows.children.at(-1).handlers.clicked();
+assert.match(hud._message.label.text, /No Logseq link/);
+
 assert.equal(hud._rows.children[3].text, 'OVERDUE (0)');
+const metadataTasks = [
+    {...task, scheduled: '2026-10-31'},
+    {...task, graph: 'Personal', source_page: 'Oct 31st, 2026', scheduled: null,
+        journal_date: '2026-10-31', source_file: 'journals/2026_10_31.md'},
+    {...task, scheduled: '2026-10-30', deep_link: 'logseq://graph/Graph?block-id=stored-block',
+        block_uuid: 'stored-block', block_location: {line: 42}},
+    {...task, scheduled: '2026-11-04'},
+].map((task, index) => ({...task, deadline: index === 1 ? null : '2026-12-25'}));
+const metadataSnapshot = JSON.stringify(metadataTasks);
+hud._data = {today: metadataTasks.slice(0, 2), overdue: [metadataTasks[2]], upcoming: [metadataTasks[3]]};
+hud._render();
+const metadataButtons = hud._rows.children.filter(child => child instanceof St.Button);
+context.Gio.AppInfo.launch_default_for_uri_finish = () => true;
+for (const [index, expected] of ['Graph · 31 Oct 2026', 'Personal', 'Graph · 30 Oct 2026', 'Graph · 4 Nov 2026'].entries()) {
+    const button = metadataButtons[index];
+    const metadata = button.children[0].children.at(-1);
+    assert.equal(metadata.text, expected);
+    assert.equal(metadata.style_class, 'hud-context');
+    assert.equal(metadata.opacity, 170);
+    assert(!button.accessible_name.includes(metadataTasks[index].source_page));
+    button.handlers.clicked();
+    assert.deepEqual(launched, [metadataTasks[index].deep_link]);
+}
+assert.equal(JSON.stringify(metadataTasks), metadataSnapshot);
+hud._data = {today: [task, {...task, status: 'DOING', priority: 'A'}], overdue: [], upcoming: []};
 values['show-overdue'] = false;
 values['show-today-count'] = false;
 hud._render();
@@ -96,7 +158,7 @@ for (const modern of [false, true]) {
     assert.equal(modern ? box.orientation : box.vertical, modern ? 1 : true);
     delete Actor.prototype.orientation;
 }
-settings.get_value = () => ({deep_unpack: () => [['/fixture', 'Fixture']]});
+settings.get_value = key => ({deep_unpack: () => key === 'task-block-filters' ? [...defaultBlockFilters, ['BEGIN', 'END']] : [['/fixture', 'Fixture']]});
 context.Clutter.Orientation = {VERTICAL: 1};
 const completions = [];
 let spawned;
@@ -148,13 +210,13 @@ assert.equal(timers.size, 0);
 
 for (const staleError of [false, true]) {
     values.horizon = 7;
-    settings.get_value = () => ({deep_unpack: () => [['/fixture', 'Fixture']]});
+    settings.get_value = key => ({deep_unpack: () => key === 'task-block-filters' ? [...defaultBlockFilters, ['BEGIN', 'END']] : [['/fixture', 'Fixture']]});
     const changing = new context.Hud();
     changing.path = '/extension';
     changing.enable();
     const initialTimer = changing._timer;
     values.horizon = 14;
-    settings.get_value = () => ({deep_unpack: () => [['/updated', 'Updated']]});
+    settings.get_value = key => ({deep_unpack: () => key === 'task-block-filters' ? [...defaultBlockFilters, ['BEGIN', 'END']] : [['/updated', 'Updated']]});
     settings.handlers.changed();
     settings.handlers.changed();
     assert.equal(completions.length, 1);

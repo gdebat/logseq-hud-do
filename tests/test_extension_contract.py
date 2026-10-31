@@ -92,7 +92,12 @@ for (const key of ['refresh-interval', 'horizon']) {
     def test_theme_contrast_and_inheritance(self):
         import re
         css = (ROOT / 'extension/stylesheet.css').read_text()
-        rules = dict(re.findall(r'([^{}]+)\{([^{}]+)\}', css))
+        rules = {selector.strip(): body for selector, body in re.findall(r'([^{}]+)\{([^{}]+)\}', css)}
+        self.assertNotIn('opacity', rules['.hud-context'])
+        self.assertIn('background-color:', rules['.hud-task:hover, .hud-task:focus'])
+        self.assertNotIn('opacity', rules['.hud-task'])
+        self.assertIn('background-color: #237b37', rules['.hud-doing'])
+        self.assertIn('background-color: #1a5fb4', rules['.hud-low'])
         def luminance(value):
             rgb = [int(value[i:i+2], 16) / 255 for i in (0, 2, 4)]
             return sum(w * (v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4) for w, v in zip((.2126, .7152, .0722), rgb))

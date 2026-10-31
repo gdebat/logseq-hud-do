@@ -20,7 +20,8 @@ export default class LogseqHudDo extends Extension {
         this._indicator.add_child(panel);
         this._message = new PopupMenu.PopupMenuItem('Loading tasks…', {reactive: false});
         this._indicator.menu.addMenuItem(this._message);
-        const item = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
+        const item = new PopupMenu.PopupBaseMenuItem({reactive: true, can_focus: false, hover: false, activate: false});
+        item.track_hover = false;
         const scroll = new St.ScrollView({style_class: 'hud-scroll', overlay_scrollbars: true});
         scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
         this._rows = this._verticalBox();
@@ -141,7 +142,8 @@ export default class LogseqHudDo extends Extension {
     }
 
     _addTask(task) {
-        const view = taskPresentation(task);
+        const view = taskPresentation(task, this._settings.get_strv('task-text-filters'),
+            this._settings.get_value('task-block-filters').deep_unpack());
         const button = new St.Button({style_class: 'hud-task', x_expand: true, can_focus: true,
             accessible_name: [view.content, view.doing ? 'DOING' : '', view.priority?.[0] ?? '', view.context].filter(Boolean).join(', ')});
         const row = this._verticalBox();
@@ -157,7 +159,7 @@ export default class LogseqHudDo extends Extension {
                 badges.add_child(new St.Label({text: view.priority[0], style_class: `hud-badge hud-${view.priority[1]}`}));
             row.add_child(badges);
         }
-        row.add_child(new St.Label({text: view.context, style_class: 'hud-context'}));
+        row.add_child(new St.Label({text: view.context, style_class: 'hud-context', opacity: 170}));
         button.set_child(row);
         button.connect('clicked', () => {
             try {
@@ -165,9 +167,17 @@ export default class LogseqHudDo extends Extension {
                     throw new Error('No Logseq link is available for this task.');
                 const app = Gio.AppInfo.get_default_for_uri_scheme('logseq');
                 if (!app)
-                    throw new Error('Install Logseq and register its logseq:// protocol.');
-                app.launch_uris([view.uri], global.create_app_launch_context(0, -1));
-                this._indicator.menu.close();
+                    throw new Error('URI handler registration missing. Install Logseq and register its logseq:// protocol.');
+                Gio.AppInfo.launch_default_for_uri_async(view.uri,
+                    global.create_app_launch_context(0, -1), null, (_source, result) => {
+                        try {
+                            Gio.AppInfo.launch_default_for_uri_finish(result);
+                            this._indicator?.menu.close();
+                        } catch (error) {
+                            if (this._indicator)
+                                this._showMessage(`URI activation failed (${view.uri}): ${error.message}`);
+                        }
+                    });
             } catch (error) {
                 this._showMessage(`Unable to open Logseq: ${error.message}`);
             }
