@@ -102,3 +102,12 @@ for (const pattern of ['[', '^(a+)+$', '^.*.*x', '^a?', '^a{2}', '^a|b', '^\\1',
     equal(displayContent('Keep text', [pattern]), 'Keep text');
 }
 equal(displayContent('[#A] Task\nrelay-id:: abc'), 'Task');
+
+for (const [scheduled, expected] of [[null, 'Personal'], ['2026-10-31', 'Personal · 31 Oct 2026'], ['2026-11-04', 'Personal · 4 Nov 2026']]) {
+    const original = {...task, scheduled, journal_date: '2026-10-31', deadline: '2026-12-25',
+        block_uuid: 'stored-block', block_location: {line: 42}};
+    const snapshot = JSON.stringify(original);
+    equal(taskPresentation(original).context, expected);
+    equal(taskPresentation(original).uri, original.deep_link);
+    equal(JSON.stringify(original), snapshot);
+}

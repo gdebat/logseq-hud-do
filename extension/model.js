@@ -71,11 +71,17 @@ export function displayContent(content, patterns = defaultTextFilters) {
 }
 
 export function taskPresentation(task, patterns = defaultTextFilters) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const scheduled = task.scheduled ? task.scheduled.split('-') : null;
+    const context = scheduled
+        ? `${task.graph} · ${Number(scheduled[2])} ${months[Number(scheduled[1]) - 1]} ${scheduled[0]}`
+        : task.graph;
     return {
         content: displayContent(task.content, patterns),
         doing: task.status === 'DOING',
         priority: priorities[task.priority] ?? null,
-        context: `${task.graph} · ${task.scheduled || task.source_page}`,
+        context,
         uri: typeof task.deep_link === 'string' && task.deep_link.startsWith('logseq://graph/')
             ? task.deep_link : null,
     };

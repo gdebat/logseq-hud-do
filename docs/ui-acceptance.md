@@ -26,8 +26,10 @@ matching removes the whole line, not just the matching substring.
 
 On GNOME 46–50 with light and dark Shell themes:
 
-1. Verify graph/page context (or the existing scheduled-date context) is muted
-   and readable, while task text remains full contrast.
+1. Verify graph and scheduled date (`D MMM YYYY`, for example `4 Nov 2026`)
+   are muted and readable in Today, Overdue and Upcoming. Unscheduled tasks
+   show only the graph, including today’s journal tasks. Page names and deadlines
+   are never shown in this line. Task text remains full contrast.
 2. Hover headings, empty sections, list padding and scrollbar: no list-wide
    highlight. Hover/focus a task: only that row highlights. Scroll and click tasks;
    verify the same Logseq destinations and successful menu dismissal.

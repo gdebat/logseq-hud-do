@@ -122,9 +122,10 @@ than stale tasks; correct the directory and select Refresh.
 The scrollable dropdown preserves backend order within TODAY, OVERDUE, UPCOMING.
 Only DOING gets a status badge. Priority badges are High (red), Medium (amber),
 Low (blue); absent priorities have no badge. Text is displayed literally.
-Rows include graph and date/page context. Colors use explicit contrasting
-foreground/background pairs while ordinary text inherits the Shell theme. Graph/page context uses 80%
-opacity of that theme foreground; task descriptions retain full opacity.
+Rows include the graph and, when scheduled, its date (for example `4 Nov 2026`).
+Colors use explicit contrasting foreground/background pairs while ordinary text
+inherits the Shell theme. Graph/date context uses about 67% opacity of that theme
+foreground; task descriptions retain full opacity.
 
 Refresh occurs on open, manually, periodically, after settings changes, and at
 local midnight. Concurrent requests coalesce into one follow-up scan. Disabling

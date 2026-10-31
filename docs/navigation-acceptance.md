@@ -46,7 +46,7 @@ with Logseq's own copied URL, especially after renaming or symlinking a graph.
    missing protocol registration and a broken desktop handler. HUD must report
    registration missing separately from URI activation failure. Gio completion
    confirms desktop activation only; verify destination visually in Logseq.
-6. On GNOME 46–50, under light and dark Shell themes, verify graph/page context
+6. On GNOME 46–50, under light and dark Shell themes, verify graph/date context
    is slightly muted and readable, descriptions remain full contrast, DOING is
    green, High red, Medium amber, Low blue, and TODO/unprioritized rows have no
    corresponding badge. Verify raw priority markers stay hidden.

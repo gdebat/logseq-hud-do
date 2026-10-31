@@ -102,6 +102,31 @@ hud._rows.children.at(-1).handlers.clicked();
 assert.match(hud._message.label.text, /No Logseq link/);
 
 assert.equal(hud._rows.children[3].text, 'OVERDUE (0)');
+const metadataTasks = [
+    {...task, scheduled: '2026-10-31'},
+    {...task, graph: 'Personal', source_page: 'Oct 31st, 2026', scheduled: null,
+        journal_date: '2026-10-31', source_file: 'journals/2026_10_31.md'},
+    {...task, scheduled: '2026-10-30', deep_link: 'logseq://graph/Graph?block-id=stored-block',
+        block_uuid: 'stored-block', block_location: {line: 42}},
+    {...task, scheduled: '2026-11-04'},
+].map((task, index) => ({...task, deadline: index === 1 ? null : '2026-12-25'}));
+const metadataSnapshot = JSON.stringify(metadataTasks);
+hud._data = {today: metadataTasks.slice(0, 2), overdue: [metadataTasks[2]], upcoming: [metadataTasks[3]]};
+hud._render();
+const metadataButtons = hud._rows.children.filter(child => child instanceof St.Button);
+context.Gio.AppInfo.launch_default_for_uri_finish = () => true;
+for (const [index, expected] of ['Graph · 31 Oct 2026', 'Personal', 'Graph · 30 Oct 2026', 'Graph · 4 Nov 2026'].entries()) {
+    const button = metadataButtons[index];
+    const metadata = button.children[0].children.at(-1);
+    assert.equal(metadata.text, expected);
+    assert.equal(metadata.style_class, 'hud-context');
+    assert.equal(metadata.opacity, 170);
+    assert(!button.accessible_name.includes(metadataTasks[index].source_page));
+    button.handlers.clicked();
+    assert.deepEqual(launched, [metadataTasks[index].deep_link]);
+}
+assert.equal(JSON.stringify(metadataTasks), metadataSnapshot);
+hud._data = {today: [task, {...task, status: 'DOING', priority: 'A'}], overdue: [], upcoming: []};
 values['show-overdue'] = false;
 values['show-today-count'] = false;
 hud._render();
