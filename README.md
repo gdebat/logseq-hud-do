@@ -1,9 +1,8 @@
 # Logseq HUD Do
 
-Phase 1: an offline, read-only Python backend for Logseq OG Markdown graphs.
-Python 3.10+ on Linux is required; there are no third-party dependencies.
-The GNOME extension and its settings and refresh lifecycle are Phase 2 and are
-not implemented.
+A native GNOME Shell 46–50 indicator with an offline, read-only Python backend for Logseq OG Markdown graphs.
+The backend requires Python 3.10+ on Linux with no third-party Python dependencies.
+The extension bundles the existing backend; no permanent service is installed.
 
 Run from this directory:
 
@@ -22,6 +21,7 @@ PATH. Then use `logseq-hud-do` with the same arguments. No sudo is required.
 To uninstall, remove `~/.local/bin/logseq-hud-do` and
 `${XDG_DATA_HOME:-~/.local/share}/logseq-hud-do`.
 
+The [JSON interface v1](docs/json-interface-v1.md) defines the backend/extension contract.
 Successful stdout is a JSON object containing `today`, `overdue`, and `upcoming`
 arrays. Dates are ISO dates or null. Priority is A/B/C or null. Each record
 includes content, status, graph display name, graph-relative source file,
@@ -57,6 +57,10 @@ subdirectories are skipped, and source opens reject symlink components.
 
 ## Development and benchmarks
 
+`make test` requires Python 3.10+, GNOME Shell 46–50, `glib-compile-schemas`,
+`gsettings`, Node.js (`node`), and GJS (`gjs`) on PATH: it includes a disposable extension installation.
+For backend-only development use `python3 -m unittest discover -s tests -p 'test_backend.py' -v`.
+
 ```sh
 make test
 make check
@@ -82,6 +86,7 @@ Without a UUID, identifiers hash graph, file, original task text, status and
 same-text occurrence. They survive unrelated inserted lines, but changing task
 text/status, moving files, or reordering identical tasks can change identity.
 Duplicate block UUIDs within a graph return the first source occurrence.
+See [navigation diagnostics and manual acceptance](docs/navigation-acceptance.md).
 Deep links depend on Logseq's registered desktop protocol and graph basename;
 the backend does not launch Logseq or verify protocol registration.
 
@@ -90,3 +95,80 @@ cache is unreadable, fix its permissions or use another cache location. A file
 changed or deleted during reading can fail the invocation; retry the refresh.
 SQLite failures report an error; damaged databases rebuild automatically.
 A graph actively being rewritten is not a graph-wide filesystem snapshot.
+
+## GNOME Shell extension
+
+Targets GNOME Shell **46, 47, 48, 49 and 50**, with GJS, Python 3.10+, GTK 4, libadwaita and
+`glib-compile-schemas` (provided by the GNOME desktop development/runtime packages).
+The installed development environment reports GNOME Shell 46.0 and GJS 1.80.2.
+Metadata declares these five versions based on static API review; live runtime
+compatibility is not yet verified on any version. See [compatibility evidence](docs/gnome-compatibility.md).
+
+```sh
+sh scripts/install-extension.sh
+# Log out and back in after installation (also after updating on Wayland).
+gnome-extensions enable logseq-hud-do@local
+gnome-extensions prefs logseq-hud-do@local
+```
+
+Add each graph by absolute directory path and an optional display name. To change
+an existing path or name, remove that entry and add it again. Preferences also
+control refresh seconds (default 30), upcoming days (default 7), Overdue/Upcoming
+visibility, and the panel Today count. Today always remains visible.
+Directories must contain non-symlink pages/ or journals/. The backend validates graph access
+again on every refresh. Missing or unreadable graphs display an error rather
+than stale tasks; correct the directory and select Refresh.
+
+The scrollable dropdown preserves backend order within TODAY, OVERDUE, UPCOMING.
+Only DOING gets a status badge. Priority badges are High (red), Medium (amber),
+Low (blue); absent priorities have no badge. Text is displayed literally.
+Preferences provide independent line regex and multiline block filters for displayed
+task descriptions; source Markdown and the SQLite cache are unchanged. Line filters
+keep their restricted, anchored regex syntax and hide `relay-id::` lines by default.
+Block filters use literal start/end markers on separate lines, ignoring surrounding
+whitespace. The default pair is `:LOGBOOK:` / `:END:`. Multiple blocks are removed,
+including their markers, while surrounding text remains. The first matching end
+closes a block; blocks do not nest. Unclosed blocks remain visible. Blank markers
+are ignored, and the first configured pair wins for duplicate starts. Remove all
+entries in either list to disable that kind of filtering independently.
+
+Rows include the graph and, when scheduled, its date (for example `4 Nov 2026`).
+Colors use explicit contrasting foreground/background pairs while ordinary text
+inherits the Shell theme. Graph/date context uses about 67% opacity of that theme
+foreground; task descriptions retain full opacity.
+
+Refresh occurs on open, manually, periodically, after settings changes, and at
+local midnight. Concurrent requests coalesce into one follow-up scan. Disabling
+removes timers, disconnects settings, cancels communication and terminates the
+child. The backend runs through argument-vector invocation, never a shell.
+Clicking a task launches its backend-provided Logseq URI through the registered
+local desktop handler. Without a handler an explanatory message appears;
+Logseq need not run for reading tasks. No editing or completion is provided.
+
+```sh
+make test-extension
+make check-extension
+```
+
+Development checks additionally require Node.js for the widget test harness and
+JavaScript syntax checks; Node.js is not needed at runtime.
+
+Focused tests run pure model/lifecycle code in the installed GJS, exercise Shell
+widget rendering and cleanup with a small test double, and install into a
+temporary XDG directory to scan a generated graph using the bundled backend.
+Static checks compile the schema strictly, parse JavaScript, and check installer
+shell syntax. No JavaScript linter or type checker is configured.
+
+Live acceptance (requires a desktop session on each of GNOME 46–50): enable the extension,
+configure disposable graphs with long tasks and all priorities, verify scrolling,
+keyboard navigation, panel count, all empty states and badge contrast under both
+light and dark Shell themes and display scaling. Open a task with Logseq's URI
+handler registered, then without it; check the error message. Change settings,
+cross local midnight, and disable during a scan; confirm no surviving child or
+callbacks. These interactive checks are not claimed by the automated harness.
+
+For Shell errors inspect `journalctl --user -b` and `gnome-extensions info
+logseq-hud-do@local`. After an update restart the session to reload modules.
+To uninstall, disable the extension and remove
+`${XDG_DATA_HOME:-~/.local/share}/gnome-shell/extensions/logseq-hud-do@local`.
+The cache is shared with the CLI and can be removed separately.

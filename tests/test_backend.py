@@ -268,6 +268,42 @@ class BackendTests(unittest.TestCase):
                 self.assertEqual(result['today'][0]['content'], 'original')
                 self.assertEqual(self.scan()[1]['parsed'], 0)
 
+    def test_parser_vocabulary_survives_cache(self):
+        from logseq_hud_do.backend import STATUSES, PRIORITIES
+        self.write('pages/a.md', '\n'.join(
+            f'- {status} ' + (f'[#{priority}] ' if priority else '') +
+            'task\n  SCHEDULED: <2026-10-31>'
+            for status in STATUSES for priority in (*PRIORITIES, None)))
+        cold, stats = self.scan()
+        self.assertEqual(stats['parsed'], 1)
+        self.assertEqual(len(cold['today']), len(STATUSES) * (len(PRIORITIES) + 1))
+        warm, stats = self.scan()
+        self.assertEqual(stats['parsed'], 0)
+        self.assertEqual(stats['reused'], 1)
+        self.assertEqual(warm, cold)
+
+    def test_cache_vocabulary_tracks_parser_owner(self):
+        from logseq_hud_do import backend
+        record = parse('- TODO task', str(self.graph), 'pages/a.md')[0]
+        for field, owner, added in [('status', 'STATUSES', 'WAITING'),
+                                     ('priority', 'PRIORITIES', 'D')]:
+            values = getattr(backend, owner)
+            for value in (*values, added, None, ''):
+                candidate = dict(record, **{field: value})
+                payload = json.dumps([candidate])
+                with self.subTest(field=field, value=value):
+                    expected = value in values or (field == 'priority' and value is None)
+                    self.assertEqual(backend.cached_records(payload, str(self.graph), 'pages/a.md') is not None, expected)
+                    with patch.object(backend, owner, (*values, added)):
+                        if value == added:
+                            self.assertIsNotNone(backend.cached_records(payload, str(self.graph), 'pages/a.md'))
+                    if value in values:
+                        with patch.object(backend, owner, tuple(v for v in values if v != value)):
+                            self.assertIsNone(backend.cached_records(payload, str(self.graph), 'pages/a.md'))
+            candidate = dict(record)
+            del candidate[field]
+            self.assertIsNone(backend.cached_records(json.dumps([candidate]), str(self.graph), 'pages/a.md'))
+
     def test_modified_records_replace_persisted_output(self):
         self.write('pages/a.md', '- TODO original\n  SCHEDULED: <2026-10-30 Fri>')
         self.scan()
@@ -314,7 +350,42 @@ class BackendTests(unittest.TestCase):
         self.write('journals/2026_10_31.md', f'- TODO block\n  id:: {identifier}\n- TODO page')
         for _ in range(2):
             result, _ = self.scan()
-            self.assertEqual([t['deep_link'] for t in result['today']], [f'logseq://graph/graph?block-id={identifier}', 'logseq://graph/graph?page=2026_10_31'])
+            self.assertEqual([t['deep_link'] for t in result['today']], [f'logseq://graph/graph?block-id={identifier}', 'logseq://graph/graph?page=Oct+31st%2C+2026'])
+
+    def test_deep_links_encode_graph_and_page_without_display_alias(self):
+        graph = self.root / 'My Graph & notes'
+        (graph / 'pages').mkdir(parents=True)
+        (graph / 'pages' / 'A & B.md').write_text('- TODO task\n  SCHEDULED: <2026-10-31 Sat>')
+        for _ in range(2):
+            result, _ = scan([(graph, 'Display alias')], self.cache, today=TODAY)
+            task = result['today'][0]
+            self.assertEqual(task['graph'], 'Display alias')
+            self.assertEqual(task['deep_link'], 'logseq://graph/My%20Graph%20%26%20notes?page=A+%26+B')
+
+    def test_og_page_resolution_examples(self):
+        examples = [
+            ('pages/Work___Projects.md', '- TODO task', 'Work/Projects', 'Work%2FProjects'),
+            ('pages/A%3F B%23 C%25.md', '- TODO task', 'A? B# C%', 'A%3F+B%23+C%25'),
+            ('pages/filename.md', 'title:: Real & title\n- TODO task', 'Real & title', 'Real+%26+title'),
+        ]
+        for relative, text, page, encoded in examples:
+            with self.subTest(relative=relative):
+                self.write(relative, text + '\n  SCHEDULED: <2026-10-31 Sat>')
+                for _ in range(2):
+                    result, diagnostics = self.scan()
+                    task = next(t for t in result['today'] if t['source_file'] == relative)
+                    self.assertEqual(task['source_page'], page)
+                    self.assertEqual(task['deep_link'], 'logseq://graph/graph?page=' + encoded)
+                    self.assertTrue(diagnostics['navigation'])
+
+    def test_invalid_block_reference_falls_back_without_using_task_hash(self):
+        self.write('journals/2026_10_31.md', '- TODO task\n  id:: not-a-uuid')
+        for _ in range(2):
+            result, diagnostics = self.scan()
+            task = result['today'][0]
+            self.assertIsNone(task['block_uuid'])
+            self.assertEqual(task['deep_link'], 'logseq://graph/graph?page=Oct+31st%2C+2026')
+            self.assertEqual(diagnostics['navigation'][0]['block_reference_status'], 'invalid')
 
     def test_supported_roots_individually(self):
         for root in ('pages', 'journals'):
