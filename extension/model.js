@@ -1,3 +1,4 @@
+export const statuses = ['TODO', 'DOING'];
 export const sections = ['today', 'overdue', 'upcoming'];
 export const priorities = {A: ['High', 'high'], B: ['Medium', 'medium'], C: ['Low', 'low']};
 
@@ -21,7 +22,7 @@ export function parseTasks(stdout) {
         for (const task of data[section]) {
             if (typeof task.content !== 'string' || typeof task.graph !== 'string' ||
                 typeof task.source_page !== 'string' ||
-                !['TODO', 'DOING'].includes(task.status) ||
+                !statuses.includes(task.status) ||
                 (task.priority !== null && !Object.hasOwn(priorities, task.priority)) ||
                 (task.scheduled !== null && typeof task.scheduled !== 'string') ||
                 (task.deep_link !== null && typeof task.deep_link !== 'string'))

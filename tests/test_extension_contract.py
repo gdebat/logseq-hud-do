@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-from logseq_hud_do.backend import scan
+from logseq_hud_do.backend import scan, STATUSES, PRIORITIES, GRAPH_ROOTS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,12 +19,21 @@ class ContractTests(unittest.TestCase):
             (graph / 'pages').mkdir(parents=True)
             lines = []
             for delta in (-1, 0, 1):
-                for status in ('TODO', 'DOING'):
-                    for priority in ('A', 'B', 'C', None):
+                for status in STATUSES:
+                    for priority in (*PRIORITIES, None):
                         lines.append(f'- {status} ' + (f'[#{priority}] ' if priority else '') + 'Task\n  SCHEDULED: <' + (dt.date.today() + dt.timedelta(days=delta)).isoformat() + '>')
             (graph / 'pages/tasks.md').write_text('\n'.join(lines))
+            subprocess.run(['node', '--input-type=module', '-e', "import {statuses, priorities} from './extension/model.js'; import assert from 'node:assert/strict'; const expected = JSON.parse(process.argv[1]); assert.deepEqual(statuses, expected[0]); assert.deepEqual(Object.keys(priorities), expected[1]);", json.dumps([STATUSES, PRIORITIES])], check=True, cwd=ROOT)
             result = subprocess.run(['python3', '-m', 'logseq_hud_do', f'--graph={graph}', '--cache', str(Path(tmp) / 'cache')], capture_output=True, text=True, check=True)
-            subprocess.run(['node', '--input-type=module', '-e', "import {parseTasks, sections, taskPresentation} from './extension/model.js'; import fs from 'node:fs'; import assert from 'node:assert/strict'; const data = parseTasks(fs.readFileSync(0, 'utf8')); assert.deepEqual(Object.keys(data).sort(), [...sections].sort()); for (const section of sections) { assert.equal(data[section].length, 8); for (const t of data[section]) { const v = taskPresentation(t); assert.equal(v.doing, t.status === 'DOING'); assert.equal(v.priority !== null, t.priority !== null); } }"], input=result.stdout, text=True, check=True, cwd=ROOT)
+            expected_fields = {'id', 'content', 'status', 'priority', 'graph',
+                               'source_file', 'source_page', 'journal_date',
+                               'block_location', 'block_uuid', 'scheduled',
+                               'deadline', 'deep_link'}
+            for tasks in json.loads(result.stdout).values():
+                for task in tasks:
+                    self.assertEqual(set(task), expected_fields)
+                    self.assertEqual(set(task['block_location']), {'line'})
+            subprocess.run(['node', '--input-type=module', '-e', "import {parseTasks, sections, taskPresentation} from './extension/model.js'; import fs from 'node:fs'; import assert from 'node:assert/strict'; const data = parseTasks(fs.readFileSync(0, 'utf8')); assert.deepEqual(Object.keys(data).sort(), [...sections].sort()); for (const section of sections) { assert.equal(data[section].length, Number(process.argv[1])); for (const t of data[section]) { const v = taskPresentation(t); assert.equal(v.doing, t.status === 'DOING'); assert.equal(v.priority !== null, t.priority !== null); } }", str(len(STATUSES) * (len(PRIORITIES) + 1))], input=result.stdout, text=True, check=True, cwd=ROOT)
 
     def test_real_schema_ranges(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -43,7 +52,8 @@ for (const key of ['refresh-interval', 'horizon']) {
             subprocess.run(['gjs', '-c', code, tmp], check=True)
 
     def test_symlink_roots(self):
-        for roots in [('pages',), ('journals',), ('pages', 'journals')]:
+        subprocess.run(['node', 'tests/extension-prefs.mjs', json.dumps(GRAPH_ROOTS)], check=True, cwd=ROOT)
+        for roots in [*((name,) for name in GRAPH_ROOTS), GRAPH_ROOTS]:
             with self.subTest(roots=roots), tempfile.TemporaryDirectory() as tmp:
                 base = Path(tmp)
                 graph = base / 'graph'

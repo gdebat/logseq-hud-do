@@ -21,6 +21,7 @@ PATH. Then use `logseq-hud-do` with the same arguments. No sudo is required.
 To uninstall, remove `~/.local/bin/logseq-hud-do` and
 `${XDG_DATA_HOME:-~/.local/share}/logseq-hud-do`.
 
+The [JSON interface v1](docs/json-interface-v1.md) defines the backend/extension contract.
 Successful stdout is a JSON object containing `today`, `overdue`, and `upcoming`
 arrays. Dates are ISO dates or null. Priority is A/B/C or null. Each record
 includes content, status, graph display name, graph-relative source file,
@@ -57,7 +58,7 @@ subdirectories are skipped, and source opens reject symlink components.
 ## Development and benchmarks
 
 `make test` requires Python 3.10+, GNOME Shell 46–50, `glib-compile-schemas`,
-and `gsettings` on PATH: it includes a disposable extension installation.
+`gsettings`, Node.js (`node`), and GJS (`gjs`) on PATH: it includes a disposable extension installation.
 For backend-only development use `python3 -m unittest discover -s tests -p 'test_backend.py' -v`.
 
 ```sh

@@ -9,6 +9,7 @@ class Widget {
 }
 const xml = fs.readFileSync('extension/schemas/org.gnome.shell.extensions.logseq-hud-do.gschema.xml', 'utf8');
 const ranges = Object.fromEntries([...xml.matchAll(/<key name="([^"]+)"[^>]*>.*?<range min="(\d+)" max="(\d+)"/g)].map(m => [m[1], [+m[2], +m[3]]]));
+const graphRoots = JSON.parse(process.argv[2] || '["pages","journals"]');
 let roots = {};
 const bindings = [];
 let saved = 0;
@@ -35,17 +36,17 @@ assert.equal(bindings.filter(([, row]) => row.adjustment).length, 2);
 const graphs = window.children[0].children[0];
 const entry = graphs.children[0];
 const addRow = graphs.children[2];
-for (const fixture of [{pages: 3}, {journals: 3}, {pages: 3, journals: 3}, {}]) {
+for (const fixture of [...graphRoots.map(name => ({[name]: 3})), Object.fromEntries(graphRoots.map(name => [name, 3])), {}, {unsupported: 2}]) {
     roots = fixture;
     entry.text = '/fixture';
     addRow.children[0].handlers.clicked();
     assert.match(addRow.subtitle, /non-symlink/);
     assert.equal(saved, 0);
 }
-for (const name of ['pages', 'journals']) {
+for (const name of graphRoots) {
     roots = {[name]: 2};
     entry.text = '/' + name;
     addRow.children[0].handlers.clicked();
 }
-assert.equal(saved, 2);
+assert.equal(saved, graphRoots.length);
 console.log('Preferences bounds and graph validation passed');

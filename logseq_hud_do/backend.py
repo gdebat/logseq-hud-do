@@ -13,11 +13,13 @@ import uuid
 
 VERSION = 3
 GRAPH_ROOTS = ('pages', 'journals')
+STATUSES = ('TODO', 'DOING')
+PRIORITIES = ('A', 'B', 'C')
 BLOCK = re.compile(r'^(\s*)-\s+(.*)$')
-TASK = re.compile(r'^(TODO|DOING)(?:\s+|$)(.*)')
+TASK = re.compile(r'^(' + '|'.join(map(re.escape, STATUSES)) + r')(?:\s+|$)(.*)')
 SCHEDULING_FIELD = re.compile(r'(SCHEDULED|DEADLINE):\s*')
 TIMESTAMP = re.compile(r'<([^>]*)>(?:\s+|$)')
-PRIORITY = re.compile(r'\[#([ABC])\]')
+PRIORITY = re.compile(r'\[#(' + '|'.join(map(re.escape, PRIORITIES)) + r')\]')
 ID = re.compile(r'^\s*id::\s*([\w-]+)\s*$')
 
 

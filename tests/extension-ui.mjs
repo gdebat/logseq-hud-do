@@ -145,3 +145,48 @@ completions.shift()({stdout: '{"today":[],"overdue":[],"upcoming":[]}', stderr: 
 await new Promise(resolve => setImmediate(resolve));
 integrated.disable();
 assert.equal(timers.size, 0);
+
+for (const staleError of [false, true]) {
+    values.horizon = 7;
+    settings.get_value = () => ({deep_unpack: () => [['/fixture', 'Fixture']]});
+    const changing = new context.Hud();
+    changing.path = '/extension';
+    changing.enable();
+    const initialTimer = changing._timer;
+    values.horizon = 14;
+    settings.get_value = () => ({deep_unpack: () => [['/updated', 'Updated']]});
+    settings.handlers.changed();
+    settings.handlers.changed();
+    assert.equal(completions.length, 1);
+    assert(!timers.has(initialTimer));
+    assert.equal(timers.size, 2);
+    completions.shift()(staleError
+        ? {error: 'Obsolete failure'}
+        : {stdout: JSON.stringify({today: [task], overdue: [], upcoming: []}), stderr: ''});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(changing._data, undefined);
+    assert.equal(changing._rows.children.length, 0);
+    assert.equal(changing._message.label.text, 'Loading tasks…');
+    assert.equal(completions.length, 1);
+    assert(spawned.includes('--graph=/updated'));
+    assert.equal(spawned[spawned.indexOf('--horizon') + 1], '14');
+    completions.shift()({stdout: JSON.stringify({today: [{...task, content: 'Updated result'}], overdue: [], upcoming: []}), stderr: ''});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(changing._rows.children[1].children[0].children[0].text, 'Updated result');
+    changing._controller.refresh();
+    settings.handlers.changed();
+    let terminated = false;
+    let cancelledActive = false;
+    changing._process.force_exit = () => { terminated = true; };
+    changing._cancellable.cancel = () => { cancelledActive = true; };
+    const rows = changing._rows;
+    changing.disable();
+    assert(terminated && cancelledActive);
+    completions.shift()({error: 'Cancelled'});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(completions.length, 0);
+    assert.equal(rows.children[1].children[0].children[0].text, 'Updated result');
+    assert.equal(timers.size, 0);
+    assert.equal(Object.keys(settings.handlers).length, 0);
+    assert.equal(changing._controller.pending, false);
+}
