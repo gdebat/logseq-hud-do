@@ -198,7 +198,7 @@ class BackendTests(unittest.TestCase):
     def test_malformed_scheduling_error_channel(self):
         self.scan()
         for field in ('SCHEDULED', 'DEADLINE'):
-            for value in ('<>', '<2026-02-30 Mon> trailing', '', '2026-10-31', '<not-a-date>', '<2026-10-31'):
+            for value in ('<>', '<2026-02-30 Mon> trailing', '<2026-10-31> trailing', '', '2026-10-31', '<not-a-date>', '<2026-10-31'):
                 for prefix in ('', 'DEADLINE: <2026-11-02> ' if field == 'SCHEDULED' else 'SCHEDULED: <2026-10-31> '):
                     with self.subTest(field=field, value=value, prefix=prefix):
                         self.write('journals/2026_10_31.md', f'- TODO invalid\n  {prefix}{field}: {value}')
@@ -208,6 +208,7 @@ class BackendTests(unittest.TestCase):
                         self.assertEqual(result.returncode, 1)
                         self.assertEqual(result.stdout, '')
                         self.assertIn(f'invalid {field}', json.loads(result.stderr)['error'])
+                        self.assertIn('2026_10_31.md:2:', json.loads(result.stderr)['error'])
                         with sqlite3.connect(self.cache) as db:
                             self.assertEqual(db.execute('SELECT count(*) FROM files').fetchone()[0], 0)
 
