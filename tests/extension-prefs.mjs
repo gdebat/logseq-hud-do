@@ -1,8 +1,10 @@
+import {compileTextFilter, defaultTextFilters} from '../extension/model.js';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 class Widget {
     constructor(props = {}) { Object.assign(this, props); this.children = []; this.handlers = {}; this.text = ''; }
+    remove(x) { this.children.splice(this.children.indexOf(x), 1); }
     add(x) { this.children.push(x); }
     add_suffix(x) { this.add(x); }
     connect(signal, callback) { this.handlers[signal] = callback; }
@@ -16,13 +18,15 @@ const queriedRoots = new Set();
 const bindings = [];
 let saved = 0;
 const settings = {
+    get_strv: () => defaultTextFilters,
+    set_strv: (key, patterns) => { assert.equal(key, 'task-text-filters'); settings.patterns = patterns; },
     get_value: () => ({deep_unpack: () => []}),
     set_value: () => saved++,
     settings_schema: {get_key: key => ({get_range: () => ({deep_unpack: () => ['range', {deep_unpack: () => ranges[key]}]})})},
     bind: (key, row) => bindings.push([key, row]),
 };
 const context = vm.createContext({
-    TextDecoder,
+    TextDecoder, compileTextFilter,
     Adw: {PreferencesPage: Widget, PreferencesGroup: Widget, ActionRow: Widget, EntryRow: Widget, SpinRow: Widget, SwitchRow: Widget},
     Gtk: {Button: Widget, Adjustment: Widget, Align: {CENTER: 0}},
     GLib: {path_is_absolute: path => path.startsWith('/'), Variant: class {}},
@@ -54,3 +58,17 @@ for (const name of graphRoots) {
 assert.equal(saved, graphRoots.length);
 assert.deepEqual([...queriedRoots].sort(), [...graphRoots].sort());
 console.log('Preferences bounds and graph validation passed');
+
+const filters = window.children[0].children[1];
+const filter = filters.children[0];
+filter.text = '[';
+filter.handlers.changed();
+assert.match(filter.title, /Ignored/);
+filter.text = '^private::';
+filter.handlers.changed();
+assert.equal(filter.title, 'Line regex');
+assert.equal(settings.patterns[0], '^private::');
+filters.children[1].children[0].handlers.clicked();
+assert.equal(settings.patterns.length, 2);
+filter.children[0].handlers.clicked();
+assert.equal(settings.patterns.length, 1);

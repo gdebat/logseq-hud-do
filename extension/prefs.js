@@ -4,6 +4,8 @@ import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {compileTextFilter} from './model.js';
+
 export default class Preferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const [, contents] = Gio.File.new_for_path(`${this.path}/logseq_hud_do/graph-roots.json`).load_contents(null);
@@ -57,6 +59,41 @@ export default class Preferences extends ExtensionPreferences {
             name.text = '';
             addRow.subtitle = '';
         });
+        const filters = new Adw.PreferencesGroup({title: 'Task text filters',
+            description: 'Hide matching description lines only. Start with ^; use character classes and at most one * or +. Groups, alternatives and counts are unsupported. Empty list disables filtering.'});
+        page.add(filters);
+        const filterRows = [];
+        const saveFilters = () => settings.set_strv('task-text-filters', filterRows.map(row => row.text));
+        const addFilter = pattern => {
+            const row = new Adw.EntryRow({title: 'Line regex'});
+            row.text = pattern;
+            const validate = () => {
+                try {
+                    compileTextFilter(row.text);
+                    row.title = 'Line regex';
+                } catch (error) {
+                    row.title = `Ignored: ${error.message}`;
+                }
+            };
+            row.connect('changed', () => { validate(); saveFilters(); });
+            const remove = new Gtk.Button({icon_name: 'user-trash-symbolic', valign: Gtk.Align.CENTER, tooltip_text: 'Remove filter'});
+            remove.connect('clicked', () => {
+                filterRows.splice(filterRows.indexOf(row), 1);
+                filters.remove(row);
+                saveFilters();
+            });
+            row.add_suffix(remove);
+            filterRows.push(row);
+            filters.add(row);
+            validate();
+        };
+        for (const pattern of settings.get_strv('task-text-filters'))
+            addFilter(pattern);
+        const addFilterRow = new Adw.ActionRow({title: 'Add text filter'});
+        const addFilterButton = new Gtk.Button({label: 'Add', valign: Gtk.Align.CENTER});
+        addFilterButton.connect('clicked', () => { addFilter('^property::'); saveFilters(); });
+        addFilterRow.add_suffix(addFilterButton);
+        filters.add(addFilterRow);
         const refresh = new Adw.PreferencesGroup({title: 'Refresh and display'});
         page.add(refresh);
         for (const [key, title] of [

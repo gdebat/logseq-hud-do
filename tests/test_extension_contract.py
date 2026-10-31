@@ -93,7 +93,8 @@ for (const key of ['refresh-interval', 'horizon']) {
         import re
         css = (ROOT / 'extension/stylesheet.css').read_text()
         rules = {selector.strip(): body for selector, body in re.findall(r'([^{}]+)\{([^{}]+)\}', css)}
-        self.assertIn('opacity: 0.8', rules['.hud-context'])
+        self.assertNotIn('opacity', rules['.hud-context'])
+        self.assertIn('background-color:', rules['.hud-task:hover, .hud-task:focus'])
         self.assertNotIn('opacity', rules['.hud-task'])
         self.assertIn('background-color: #237b37', rules['.hud-doing'])
         self.assertIn('background-color: #1a5fb4', rules['.hud-low'])

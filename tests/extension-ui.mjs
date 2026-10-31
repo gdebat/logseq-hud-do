@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {sections, taskPresentation, RefreshController, backendArguments, parseTasks} from '../extension/model.js';
+import {defaultTextFilters, sections, taskPresentation, RefreshController, backendArguments, parseTasks} from '../extension/model.js';
 
 class Actor {
     constructor(props = {}) { Object.assign(this, props); this.children = []; this.clutter_text = {}; this.handlers = {}; }
@@ -24,6 +24,7 @@ class Indicator extends Actor { constructor() { super(); this.menu = new Menu();
 class Item extends Actor { constructor(text) { super(); this.label = new Actor({text}); } }
 const values = {'refresh-interval': 30, horizon: 7, 'show-overdue': true, 'show-upcoming': true, 'show-today-count': true};
 const settings = new Actor();
+settings.get_strv = () => defaultTextFilters;
 settings.get_boolean = key => values[key];
 settings.get_int = key => values[key];
 settings.get_value = () => ({deep_unpack: () => []});
@@ -54,6 +55,9 @@ assert.equal(hud._indicator.children[0].children[0].icon_name, 'checkbox-checked
 assert.equal(hud._count.text, '0');
 assert.equal(timers.size, 2);
 assert.equal(hud._indicator.menu.children[1].reactive, true);
+assert.equal(hud._indicator.menu.children[1].track_hover, false);
+assert.equal(hud._indicator.menu.children[1].hover, false);
+assert.equal(hud._indicator.menu.children[1].activate, false);
 const task = {content: '<literal>', graph: 'Graph', source_page: 'Page', scheduled: null, priority: null, status: 'TODO', deep_link: 'logseq://graph/Graph?page=Page'};
 hud._data = {today: [task, {...task, content: 'Second', status: 'DOING', priority: 'A'}], overdue: [], upcoming: []};
 hud._render();
@@ -63,6 +67,7 @@ assert.equal(buttons[0].children[0].children.length, 2);
 assert.equal(buttons[0].children[0].children[0].text, '<literal>');
 assert.equal(buttons[0].children[0].children[0].style_class, undefined);
 assert.equal(buttons[0].children[0].children.at(-1).style_class, 'hud-context');
+assert.equal(buttons[0].children[0].children.at(-1).opacity, 170);
 assert.equal(buttons[1].children[0].children[1].children[0].text, '◴ DOING');
 assert.equal(buttons[1].children[0].children[1].children[1].text, 'High');
 buttons[0].handlers.clicked();

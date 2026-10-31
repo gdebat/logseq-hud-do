@@ -1,4 +1,4 @@
-import {backendArguments, parseTasks, taskPresentation, RefreshController, sections} from '../extension/model.js';
+import {displayContent, compileTextFilter, backendArguments, parseTasks, taskPresentation, RefreshController, sections} from '../extension/model.js';
 
 function assert(value, message) {
     if (!value)
@@ -89,3 +89,16 @@ for (const priority of ['A', 'B', 'C']) {
     equal(original.content, `[#${priority}] Ship [#A] now\nKeep literal <text>`);
 }
 equal(taskPresentation({...task, content: '[#D] literal'}).content, '[#D] literal');
+
+equal(displayContent('Task\n  relay-id:: abc\nKeep text\nrelay-id:: xyz'), 'Task\nKeep text');
+equal(displayContent('Task\r\n\trelay-id:: abc\r\nKeep'), 'Task\nKeep');
+equal(displayContent('relay-id:: abc', []), 'relay-id:: abc');
+equal(displayContent('Keep relay-id:: literal\nrelay-id-other:: value'), 'Keep relay-id:: literal\nrelay-id-other:: value');
+equal(displayContent('Task\nprivate:: value\nKeep', ['^private::']), 'Task\nKeep');
+for (const pattern of ['[', '^(a+)+$', '^.*.*x', '^a?', '^a{2}', '^a|b', '^\\1', 'unanchored']) {
+    let refused = false;
+    try { compileTextFilter(pattern); } catch { refused = true; }
+    assert(refused, `unsafe pattern accepted: ${pattern}`);
+    equal(displayContent('Keep text', [pattern]), 'Keep text');
+}
+equal(displayContent('[#A] Task\nrelay-id:: abc'), 'Task');
