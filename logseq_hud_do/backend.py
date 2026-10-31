@@ -11,10 +11,11 @@ import time
 from urllib.parse import urlencode, quote
 import uuid
 
-VERSION = 1
+VERSION = 2
+GRAPH_ROOTS = ('pages', 'journals')
 BLOCK = re.compile(r'^(\s*)-\s+(.*)$')
 TASK = re.compile(r'^(TODO|DOING)(?:\s+|$)(.*)')
-DATE = re.compile(r'\b(SCHEDULED|DEADLINE):\s*<([0-9]{4}-[0-9]{2}-[0-9]{2})[^>]*>')
+DATE = re.compile(r'^(SCHEDULED|DEADLINE):\s*<([^>]+)>\s*$')
 PRIORITY = re.compile(r'\[#([ABC])\]')
 ID = re.compile(r'^\s*id::\s*([\w-]+)\s*$')
 
@@ -75,9 +76,15 @@ def parse(text, graph, relative):
             continue
         owner = stack[-1][1] if stack else None
         if owner is not None:
-            for kind, value in DATE.findall(body):
-                if date_value(value):
-                    owner['scheduled' if kind == 'SCHEDULED' else 'deadline'] = value
+            scheduling = DATE.fullmatch(body) if not match else None
+            if scheduling:
+                kind, timestamp = scheduling.groups()
+                value = timestamp.split()[0] if timestamp.split() else ''
+                if not date_value(value):
+                    raise ValueError(f'{graph}/{relative}:{number}: invalid {kind} date: {timestamp}')
+                owner['scheduled' if kind == 'SCHEDULED' else 'deadline'] = value
+            elif not match and not re.match(r'^\w+::', body):
+                owner['content'] += '\n' + body
             identifier = ID.match(line)
             if identifier:
                 try:
@@ -90,7 +97,7 @@ def parse(text, graph, relative):
 
 def discover(graph):
     files = {}
-    for name in ('pages', 'journals'):
+    for name in GRAPH_ROOTS:
         folder = graph / name
         if folder.is_symlink():
             continue
@@ -126,6 +133,39 @@ def connect(cache):
         raise
 
 
+def cached_records(payload, graph, relative):
+    try:
+        records = json.loads(payload)
+        if not isinstance(records, list):
+            return None
+        for record in records:
+            if not isinstance(record, dict):
+                return None
+            for key in ('id', 'content', 'graph', 'source_file', 'source_page'):
+                if not isinstance(record.get(key), str):
+                    return None
+            if record['graph'] != graph or record['source_file'] != relative:
+                return None
+            if record.get('status') not in ('TODO', 'DOING') or record.get('priority', '') not in ('A', 'B', 'C', None):
+                return None
+            for key in ('scheduled', 'deadline', 'journal_date'):
+                if key not in record or (record[key] is not None and
+                        (not isinstance(record[key], str) or not date_value(record[key]))):
+                    return None
+            location = record.get('block_location')
+            if not isinstance(location, dict) or type(location.get('line')) is not int or location['line'] < 1:
+                return None
+            if 'block_uuid' not in record:
+                return None
+            if record['block_uuid'] is not None:
+                if not isinstance(record['block_uuid'], str):
+                    return None
+                uuid.UUID(record['block_uuid'])
+        return records
+    except (ValueError, TypeError):
+        return None
+
+
 def classify(tasks, today, horizon):
     result = dict(today=[], overdue=[], upcoming=[])
     seen = set()
@@ -157,7 +197,7 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
     if not resolved or len({str(p) for p, _ in resolved}) != len(resolved):
         raise ValueError('configure at least one distinct graph directory')
     for path, _ in resolved:
-        if not path.is_dir() or not any((path / part).is_dir() for part in ('pages', 'journals')):
+        if not path.is_dir() or not any((path / part).is_dir() for part in GRAPH_ROOTS):
             raise ValueError(f'invalid graph directory: {path}')
     cache = Path(cache).expanduser().resolve()
     if any(cache.is_relative_to(path) for path, _ in resolved):
@@ -174,15 +214,19 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
             stats['discovered'] += len(current)
             for relative, metadata in sorted(current.items()):
                 old = cached.get(relative)
-                if not full_rescan and old and metadata == old[:2]:
-                    records = json.loads(old[2])
+                records = cached_records(old[2], graph_id, relative) if not full_rescan and old and metadata == old[:2] else None
+                if records is not None:
                     stats['reused'] += 1
                 else:
                     # Refuse symlinks at open as well as discovery; never follow a replaced leaf.
                     descriptor = open_source(graph, relative)
-                    with os.fdopen(descriptor, 'r', encoding='utf-8', errors='replace') as source:
+                    with os.fdopen(descriptor, 'r', encoding='utf-8') as source:
                         before = os.fstat(source.fileno())
-                        records = parse(source.read(), graph_id, relative)
+                        try:
+                            text = source.read()
+                        except UnicodeDecodeError as error:
+                            raise ValueError(f'{graph}/{relative}: invalid UTF-8: {error}') from error
+                        records = parse(text, graph_id, relative)
                         after = os.fstat(source.fileno())
                     if (before.st_mtime_ns, before.st_size) != (after.st_mtime_ns, after.st_size):
                         raise OSError(f'file changed during scan: {relative}; retry')

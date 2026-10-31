@@ -42,7 +42,8 @@ warm-cache executions. Consumers should refresh on local midnight.
 parses blocks line by line, and stores raw extraction records in SQLite keyed
 by canonical graph directory and relative path. Metadata belongs to its nearest
 block, including non-task children. Fenced code is ignored. Scheduling dates
-and deadlines are retained without expanding recurrence.
+and deadlines on owned metadata lines are retained without expanding recurrence.
+Owned non-metadata continuation lines are preserved in task content.
 
 Nanosecond mtime and size determine reuse. One transaction covers each refresh;
 a Linux advisory lock serializes processes and corrupted-database recovery.
@@ -72,7 +73,7 @@ Only OG Markdown is supported. Journal names supported are YYYY_MM_DD,
 YYYY-MM-DD, and English abbreviated/full month names such as Oct 31, 2026
 (month-name parsing follows the process locale). Arbitrary custom journal
 formats and Logseq DB graphs are unsupported. Dates without valid ISO calendar
-values are ignored. Invalid UTF-8 is replaced. Deadline dates do not classify
+values and invalid UTF-8 fail the refresh with source context. Deadline dates do not classify
 tasks. Markdown is never executed or rendered.
 
 Without a UUID, identifiers hash graph, file, original task text, status and

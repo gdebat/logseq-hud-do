@@ -31,7 +31,7 @@ class BackendTests(unittest.TestCase):
         return scan([(self.graph, 'Work')], self.cache, today=TODAY, **kw)
 
     def test_extraction_and_nested_ownership(self):
-        tasks = parse('- TODO [#A] parent\n  DEADLINE: <2026-11-01 Sun>\n  - child\n    SCHEDULED: <2026-10-30 Fri>\n  - DOING [#C] nested\n    SCHEDULED: <2026-10-31 Sat +1w>\n    id:: 12345678-1234-1234-1234-123456789abc\n- DONE ignored\n- ```\n  - TODO code\n  ```\n- TODO bad\n  SCHEDULED: <2026-02-30 Mon>\n', 'g', 'pages/a.md')
+        tasks = parse('- TODO [#A] parent\n  DEADLINE: <2026-11-01 Sun>\n  - child\n    SCHEDULED: <2026-10-30 Fri>\n  - DOING [#C] nested\n    SCHEDULED: <2026-10-31 Sat +1w>\n    id:: 12345678-1234-1234-1234-123456789abc\n- DONE ignored\n- ```\n  - TODO code\n  ```\n- TODO final\n', 'g', 'pages/a.md')
         self.assertEqual(len(tasks), 3)
         self.assertEqual([t['status'] for t in tasks], ['TODO', 'DOING', 'TODO'])
         self.assertEqual(tasks[0]['deadline'], '2026-11-01')
@@ -138,7 +138,8 @@ class BackendTests(unittest.TestCase):
 
     def test_invalid_utf8_and_cli_error(self):
         (self.graph / 'pages/a.md').write_bytes(b'- TODO bad\xff')
-        self.assertEqual(self.scan()[1]['extracted_tasks'], 1)
+        with self.assertRaisesRegex(ValueError, 'a.md.*invalid UTF-8'):
+            self.scan()
         result = subprocess.run([sys.executable, '-m', 'logseq_hud_do', '--graph', str(self.root / 'missing'), '--cache', str(self.cache)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, '')
@@ -152,3 +153,128 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(len(result), 8)
         self.assertEqual([t['priority'] for t in result], ['A', 'B', 'C', None] * 2)
         self.assertEqual([t['status'] for t in result], ['DOING'] * 4 + ['TODO'] * 4)
+
+    def test_owned_content_and_metadata_prose_cold_warm(self):
+        self.write('journals/2026_10_31.md', '- TODO discuss SCHEDULED: <2026-10-30 Fri>\n  instructions\n  discuss DEADLINE: <2026-10-29 Thu>\n  custom:: metadata\n  - child\n    child instructions\n')
+        for expected in (1, 0):
+            result, stats = self.scan()
+            self.assertEqual(stats['parsed'], expected)
+            self.assertEqual(len(result['today']), 1)
+            task = result['today'][0]
+            self.assertEqual(task['content'], 'discuss SCHEDULED: <2026-10-30 Fri>\ninstructions\ndiscuss DEADLINE: <2026-10-29 Thu>')
+            self.assertIsNone(task['scheduled'])
+            self.assertIsNone(task['deadline'])
+
+    def test_invalid_dates_fail_without_cached_absence(self):
+        self.scan()
+        for field in ('SCHEDULED', 'DEADLINE'):
+            with self.subTest(field=field):
+                self.write('journals/2026_10_31.md', f'- TODO invalid\n  {field}: <2026-02-30 Mon>')
+                with self.assertRaisesRegex(ValueError, f'2026_10_31.md:2: invalid {field}'):
+                    self.scan()
+                with sqlite3.connect(self.cache) as db:
+                    self.assertEqual(db.execute('SELECT count(*) FROM files').fetchone()[0], 0)
+
+    def test_malformed_cached_records_reparsed(self):
+        self.write('journals/2026_10_31.md', '- TODO original')
+        self.scan()
+        with sqlite3.connect(self.cache) as db:
+            valid = json.loads(db.execute('SELECT tasks FROM files').fetchone()[0])[0]
+        payloads = ['{', '{}', '[null]']
+        for field in valid:
+            missing = dict(valid)
+            del missing[field]
+            payloads.append(json.dumps([missing]))
+            invalid = dict(valid, **{field: []})
+            payloads.append(json.dumps([invalid]))
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                with sqlite3.connect(self.cache) as db:
+                    db.execute('UPDATE files SET tasks=?', (payload,))
+                result, stats = self.scan()
+                self.assertEqual(stats['parsed'], 1)
+                self.assertEqual(result['today'][0]['content'], 'original')
+                self.assertEqual(self.scan()[1]['parsed'], 0)
+
+    def test_modified_records_replace_persisted_output(self):
+        self.write('pages/a.md', '- TODO original\n  SCHEDULED: <2026-10-30 Fri>')
+        self.scan()
+        self.write('pages/a.md', '- DOING replacement\n  SCHEDULED: <2026-11-01 Sun>')
+        for expected in (1, 0):
+            result, stats = self.scan()
+            self.assertEqual(stats['parsed'], expected)
+            self.assertEqual(result['overdue'], [])
+            self.assertEqual(result['upcoming'][0]['content'], 'replacement')
+            self.assertEqual(result['upcoming'][0]['status'], 'DOING')
+            self.assertEqual(result['upcoming'][0]['scheduled'], '2026-11-01')
+        with sqlite3.connect(self.cache) as db:
+            records = json.loads(db.execute('SELECT tasks FROM files').fetchone()[0])
+        self.assertEqual([r['content'] for r in records], ['replacement'])
+
+    def test_post_discovery_symlink_replacement(self):
+        from logseq_hud_do import backend
+        outside = self.root / 'outside'
+        outside.mkdir()
+        (outside / 'a.md').write_text('- TODO outside secret')
+        original = backend.discover
+        for component in ('leaf', 'directory'):
+            with self.subTest(component=component):
+                self.write('pages/a.md', '- TODO inside')
+                def replace(graph):
+                    found = original(graph)
+                    (graph / 'pages/a.md').unlink()
+                    if component == 'leaf':
+                        (graph / 'pages/a.md').symlink_to(outside / 'a.md')
+                    else:
+                        (graph / 'pages').rmdir()
+                        (graph / 'pages').symlink_to(outside, target_is_directory=True)
+                    return found
+                with patch.object(backend, 'discover', replace), self.assertRaises(OSError):
+                    self.scan()
+                if component == 'leaf':
+                    (self.graph / 'pages/a.md').unlink()
+                else:
+                    (self.graph / 'pages').unlink()
+                    (self.graph / 'pages').mkdir()
+
+    def test_exact_block_and_page_links(self):
+        identifier = '12345678-1234-1234-1234-123456789abc'
+        self.write('journals/2026_10_31.md', f'- TODO block\n  id:: {identifier}\n- TODO page')
+        for _ in range(2):
+            result, _ = self.scan()
+            self.assertEqual([t['deep_link'] for t in result['today']], [f'logseq://graph/graph?block-id={identifier}', 'logseq://graph/graph?page=2026_10_31'])
+
+    def test_supported_roots_individually(self):
+        for root in ('pages', 'journals'):
+            graph = self.root / root
+            (graph / root).mkdir(parents=True)
+            (graph / root / 'a.md').write_text('- TODO task')
+            self.assertEqual(scan([(graph, None)], self.cache, today=TODAY)[1]['parsed'], 1)
+
+    def test_timezone_midnight_with_warm_cache(self):
+        import time
+        self.write('journals/2026_10_31.md', '- TODO local\n- TODO scheduled\n  SCHEDULED: <2026-10-31 Sat>')
+        real_datetime = dt.datetime
+        instant = real_datetime(2026, 10, 30, 21, 59, tzinfo=dt.timezone.utc)
+        class Clock(real_datetime):
+            @classmethod
+            def now(cls):
+                return instant.astimezone().replace(tzinfo=None)
+        previous = os.environ.get('TZ')
+        try:
+            os.environ['TZ'] = 'Etc/GMT-2'
+            time.tzset()
+            with patch('logseq_hud_do.backend.dt.datetime', Clock):
+                before, _ = scan([(self.graph, None)], self.cache)
+                self.assertEqual(before['today'], [])
+                self.assertEqual(len(before['upcoming']), 1)
+                instant = real_datetime(2026, 10, 30, 22, 1, tzinfo=dt.timezone.utc)
+                after, stats = scan([(self.graph, None)], self.cache)
+                self.assertEqual(len(after['today']), 2)
+                self.assertEqual(stats['parsed'], 0)
+        finally:
+            if previous is None:
+                os.environ.pop('TZ', None)
+            else:
+                os.environ['TZ'] = previous
+            time.tzset()
