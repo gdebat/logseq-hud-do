@@ -122,6 +122,16 @@ than stale tasks; correct the directory and select Refresh.
 The scrollable dropdown preserves backend order within TODAY, OVERDUE, UPCOMING.
 Only DOING gets a status badge. Priority badges are High (red), Medium (amber),
 Low (blue); absent priorities have no badge. Text is displayed literally.
+Preferences provide independent line regex and multiline block filters for displayed
+task descriptions; source Markdown and the SQLite cache are unchanged. Line filters
+keep their restricted, anchored regex syntax and hide `relay-id::` lines by default.
+Block filters use literal start/end markers on separate lines, ignoring surrounding
+whitespace. The default pair is `:LOGBOOK:` / `:END:`. Multiple blocks are removed,
+including their markers, while surrounding text remains. The first matching end
+closes a block; blocks do not nest. Unclosed blocks remain visible. Blank markers
+are ignored, and the first configured pair wins for duplicate starts. Remove all
+entries in either list to disable that kind of filtering independently.
+
 Rows include the graph and, when scheduled, its date (for example `4 Nov 2026`).
 Colors use explicit contrasting foreground/background pairs while ordinary text
 inherits the Shell theme. Graph/date context uses about 67% opacity of that theme

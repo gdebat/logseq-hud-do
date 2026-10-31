@@ -32,6 +32,8 @@ export function parseTasks(stdout) {
     return data;
 }
 
+export const defaultBlockFilters = [[':LOGBOOK:', ':END:']];
+
 export const defaultTextFilters = ['^[ \t]*relay-id::'];
 
 // Anchoring and a single repetition keep matching linear in the line length.
@@ -62,15 +64,44 @@ export function compileTextFilter(pattern) {
     return new RegExp(pattern);
 }
 
-export function displayContent(content, patterns = defaultTextFilters) {
+function filterBlocks(lines, blocks) {
+    const endings = new Map();
+    for (const [start, end] of blocks) {
+        if (start.trim() && end.trim() && !endings.has(start.trim()))
+            endings.set(start.trim(), end.trim());
+    }
+    const result = [];
+    let opening = -1;
+    let closing = null;
+    for (let i = 0; i < lines.length; i++) {
+        const marker = lines[i].trim();
+        if (opening >= 0) {
+            if (marker === closing) {
+                opening = -1;
+                closing = null;
+            }
+        } else if (endings.has(marker)) {
+            opening = i;
+            closing = endings.get(marker);
+        } else {
+            result.push(lines[i]);
+        }
+    }
+    if (opening >= 0)
+        for (let i = opening; i < lines.length; i++)
+            result.push(lines[i]);
+    return result;
+}
+
+export function displayContent(content, patterns = defaultTextFilters, blocks = defaultBlockFilters) {
     const filters = patterns.flatMap(pattern => {
         try { return [compileTextFilter(pattern)]; } catch { return []; }
     });
-    return content.split(/\r?\n/).filter(line => !filters.some(filter => filter.test(line)))
+    return filterBlocks(content.split(/\r?\n/), blocks).filter(line => !filters.some(filter => filter.test(line)))
         .join('\n').replace(/\[#(?:A|B|C)\][ \t]*/g, '').trim();
 }
 
-export function taskPresentation(task, patterns = defaultTextFilters) {
+export function taskPresentation(task, patterns = defaultTextFilters, blocks = defaultBlockFilters) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const scheduled = task.scheduled ? task.scheduled.split('-') : null;
@@ -78,7 +109,7 @@ export function taskPresentation(task, patterns = defaultTextFilters) {
         ? `${task.graph} · ${Number(scheduled[2])} ${months[Number(scheduled[1]) - 1]} ${scheduled[0]}`
         : task.graph;
     return {
-        content: displayContent(task.content, patterns),
+        content: displayContent(task.content, patterns, blocks),
         doing: task.status === 'DOING',
         priority: priorities[task.priority] ?? null,
         context,

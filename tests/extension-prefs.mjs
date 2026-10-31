@@ -1,4 +1,4 @@
-import {compileTextFilter, defaultTextFilters} from '../extension/model.js';
+import {compileTextFilter, defaultTextFilters, defaultBlockFilters} from '../extension/model.js';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
@@ -20,8 +20,8 @@ let saved = 0;
 const settings = {
     get_strv: () => defaultTextFilters,
     set_strv: (key, patterns) => { assert.equal(key, 'task-text-filters'); settings.patterns = patterns; },
-    get_value: () => ({deep_unpack: () => []}),
-    set_value: () => saved++,
+    get_value: key => ({deep_unpack: () => key === 'task-block-filters' ? defaultBlockFilters : []}),
+    set_value: (key, value) => { if (key === 'task-block-filters') settings.blocks = value.value; else saved++; },
     settings_schema: {get_key: key => ({get_range: () => ({deep_unpack: () => ['range', {deep_unpack: () => ranges[key]}]})})},
     bind: (key, row) => bindings.push([key, row]),
 };
@@ -29,7 +29,7 @@ const context = vm.createContext({
     TextDecoder, compileTextFilter,
     Adw: {PreferencesPage: Widget, PreferencesGroup: Widget, ActionRow: Widget, EntryRow: Widget, SpinRow: Widget, SwitchRow: Widget},
     Gtk: {Button: Widget, Adjustment: Widget, Align: {CENTER: 0}},
-    GLib: {path_is_absolute: path => path.startsWith('/'), Variant: class {}},
+    GLib: {path_is_absolute: path => path.startsWith('/'), Variant: class { constructor(type, value) { assert.equal(type, 'a(ss)'); this.value = value; } }},
     Gio: {SettingsBindFlags: {DEFAULT: 0}, FileQueryInfoFlags: {NOFOLLOW_SYMLINKS: 1}, FileType: {DIRECTORY: 2},
         File: {new_for_path: path => ({load_contents: () => [true, fs.readFileSync(path)], query_exists: () => true, get_child: name => (queriedRoots.add(name), {query_file_type: flags => {assert.equal(flags, 1); return roots[name];}})})}},
     ExtensionPreferences: class {path = '.'; getSettings() {return settings;}},
@@ -72,3 +72,17 @@ filters.children[1].children[0].handlers.clicked();
 assert.equal(settings.patterns.length, 2);
 filter.children[0].handlers.clicked();
 assert.equal(settings.patterns.length, 1);
+
+const blocks = window.children[0].children[2];
+assert.equal(blocks.children[0].text, ':LOGBOOK:');
+assert.equal(blocks.children[1].text, ':END:');
+blocks.children[0].text = 'BEGIN';
+blocks.children[0].handlers.changed();
+assert.equal(JSON.stringify(settings.blocks), JSON.stringify([['BEGIN', ':END:']]));
+blocks.children[1].text = 'END';
+blocks.children[1].handlers.changed();
+assert.equal(settings.blocks[0][1], 'END');
+blocks.children[2].children[0].handlers.clicked();
+assert.equal(settings.blocks.length, 2);
+blocks.children[0].children[0].handlers.clicked();
+assert.equal(JSON.stringify(settings.blocks), JSON.stringify(defaultBlockFilters));

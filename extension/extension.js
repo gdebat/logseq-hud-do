@@ -142,7 +142,8 @@ export default class LogseqHudDo extends Extension {
     }
 
     _addTask(task) {
-        const view = taskPresentation(task, this._settings.get_strv('task-text-filters'));
+        const view = taskPresentation(task, this._settings.get_strv('task-text-filters'),
+            this._settings.get_value('task-block-filters').deep_unpack());
         const button = new St.Button({style_class: 'hud-task', x_expand: true, can_focus: true,
             accessible_name: [view.content, view.doing ? 'DOING' : '', view.priority?.[0] ?? '', view.context].filter(Boolean).join(', ')});
         const row = this._verticalBox();

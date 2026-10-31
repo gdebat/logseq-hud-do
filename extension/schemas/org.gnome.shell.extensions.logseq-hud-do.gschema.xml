@@ -1,6 +1,7 @@
 <schemalist>
   <schema id="org.gnome.shell.extensions.logseq-hud-do" path="/org/gnome/shell/extensions/logseq-hud-do/">
     <key name="task-text-filters" type="as"><default>['^[ \t]*relay-id::']</default><summary>Regex patterns for hiding description lines</summary></key>
+    <key name="task-block-filters" type="a(ss)"><default>[(':LOGBOOK:', ':END:')]</default><summary>Literal start and end markers for hiding description blocks</summary></key>
     <key name="graphs" type="a(ss)"><default>[]</default><summary>Graph directories and display names</summary></key>
     <key name="refresh-interval" type="i"><default>30</default><range min="5" max="86400"/><summary>Refresh interval in seconds</summary></key>
     <key name="horizon" type="i"><default>7</default><range min="0" max="3650"/><summary>Upcoming horizon in days</summary></key>

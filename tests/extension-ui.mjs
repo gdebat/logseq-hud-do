@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {defaultTextFilters, sections, taskPresentation, RefreshController, backendArguments, parseTasks} from '../extension/model.js';
+import {defaultTextFilters, defaultBlockFilters, sections, taskPresentation, RefreshController, backendArguments, parseTasks} from '../extension/model.js';
 
 class Actor {
     constructor(props = {}) { Object.assign(this, props); this.children = []; this.clutter_text = {}; this.handlers = {}; }
@@ -27,7 +27,7 @@ const settings = new Actor();
 settings.get_strv = () => defaultTextFilters;
 settings.get_boolean = key => values[key];
 settings.get_int = key => values[key];
-settings.get_value = () => ({deep_unpack: () => []});
+settings.get_value = key => ({deep_unpack: () => key === 'task-block-filters' ? [...defaultBlockFilters, ['BEGIN', 'END']] : []});
 const timers = new Map();
 let timerId = 0;
 const now = {add_days: () => now, get_year: () => 2026, get_month: () => 11, get_day_of_month: () => 1, difference: () => 10000000};
@@ -58,7 +58,7 @@ assert.equal(hud._indicator.menu.children[1].reactive, true);
 assert.equal(hud._indicator.menu.children[1].track_hover, false);
 assert.equal(hud._indicator.menu.children[1].hover, false);
 assert.equal(hud._indicator.menu.children[1].activate, false);
-const task = {content: '<literal>', graph: 'Graph', source_page: 'Page', scheduled: null, priority: null, status: 'TODO', deep_link: 'logseq://graph/Graph?page=Page'};
+const task = {content: '<literal>\nBEGIN\nhidden\nEND', graph: 'Graph', source_page: 'Page', scheduled: null, priority: null, status: 'TODO', deep_link: 'logseq://graph/Graph?page=Page'};
 hud._data = {today: [task, {...task, content: 'Second', status: 'DOING', priority: 'A'}], overdue: [], upcoming: []};
 hud._render();
 assert.equal(hud._rows.children[0].text, 'TODAY (2)');

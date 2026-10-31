@@ -60,7 +60,7 @@ export default class Preferences extends ExtensionPreferences {
             addRow.subtitle = '';
         });
         const filters = new Adw.PreferencesGroup({title: 'Task text filters',
-            description: 'Hide matching description lines only. Start with ^; use character classes and at most one * or +. Groups, alternatives and counts are unsupported. Empty list disables filtering.'});
+            description: 'Hide matching description lines only. Start with ^; use character classes and at most one * or +. Groups, alternatives and counts are unsupported. Empty list disables line filtering.'});
         page.add(filters);
         const filterRows = [];
         const saveFilters = () => settings.set_strv('task-text-filters', filterRows.map(row => row.text));
@@ -94,6 +94,39 @@ export default class Preferences extends ExtensionPreferences {
         addFilterButton.connect('clicked', () => { addFilter('^property::'); saveFilters(); });
         addFilterRow.add_suffix(addFilterButton);
         filters.add(addFilterRow);
+        const blocks = new Adw.PreferencesGroup({title: 'Task block filters',
+            description: 'Literal markers must occupy separate lines; surrounding whitespace is ignored. The first matching end closes a block; blocks do not nest. Unclosed blocks are kept. Blank markers are ignored; for duplicate starts the first pair wins. Empty list disables block filtering.'});
+        page.add(blocks);
+        const blockRows = [];
+        const saveBlocks = () => settings.set_value('task-block-filters',
+            new GLib.Variant('a(ss)', blockRows.map(([start, end]) => [start.text, end.text])));
+        const addBlock = (start, end) => {
+            const startRow = new Adw.EntryRow({title: 'Start marker'});
+            const endRow = new Adw.EntryRow({title: 'End marker'});
+            startRow.text = start;
+            endRow.text = end;
+            const pair = [startRow, endRow];
+            blockRows.push(pair);
+            for (const row of pair) {
+                blocks.add(row);
+                row.connect('changed', saveBlocks);
+            }
+            const remove = new Gtk.Button({icon_name: 'user-trash-symbolic', valign: Gtk.Align.CENTER, tooltip_text: 'Remove block filter'});
+            remove.connect('clicked', () => {
+                blockRows.splice(blockRows.indexOf(pair), 1);
+                for (const row of pair)
+                    blocks.remove(row);
+                saveBlocks();
+            });
+            startRow.add_suffix(remove);
+        };
+        for (const [start, end] of settings.get_value('task-block-filters').deep_unpack())
+            addBlock(start, end);
+        const addBlockRow = new Adw.ActionRow({title: 'Add block filter'});
+        const addBlockButton = new Gtk.Button({label: 'Add', valign: Gtk.Align.CENTER});
+        addBlockButton.connect('clicked', () => { addBlock(':LOGBOOK:', ':END:'); saveBlocks(); });
+        addBlockRow.add_suffix(addBlockButton);
+        blocks.add(addBlockRow);
         const refresh = new Adw.PreferencesGroup({title: 'Refresh and display'});
         page.add(refresh);
         for (const [key, title] of [
