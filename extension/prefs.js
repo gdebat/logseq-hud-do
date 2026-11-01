@@ -11,7 +11,7 @@ export default class Preferences extends ExtensionPreferences {
         const [, contents] = Gio.File.new_for_path(`${this.path}/logseq_hud_do/graph-roots.json`).load_contents(null);
         const graphRoots = JSON.parse(new TextDecoder().decode(contents));
         const settings = this.getSettings();
-        const page = new Adw.PreferencesPage({title: 'Logseq HUD Do', icon_name: 'view-list-symbolic'});
+        const page = new Adw.PreferencesPage({title: 'Logseq HUD->Do', icon_name: 'view-list-symbolic'});
         window.add(page);
         const graphs = new Adw.PreferencesGroup({title: 'Graphs', description: 'Absolute graph directories containing pages or journals. Graphs are read-only.'});
         page.add(graphs);

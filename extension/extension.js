@@ -12,7 +12,7 @@ import {backendArguments, parseTasks, sections, taskPresentation, RefreshControl
 export default class LogseqHudDo extends Extension {
     enable() {
         this._settings = this.getSettings();
-        this._indicator = new PanelMenu.Button(0.0, 'Logseq HUD Do');
+        this._indicator = new PanelMenu.Button(0.0, 'Logseq HUD->Do');
         const panel = new St.BoxLayout({style_class: 'panel-status-menu-box'});
         panel.add_child(new St.Icon({icon_name: 'checkbox-checked-symbolic', style_class: 'system-status-icon'}));
         this._count = new St.Label({text: '', y_align: Clutter.ActorAlign.CENTER});

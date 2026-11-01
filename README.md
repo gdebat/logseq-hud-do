@@ -1,4 +1,9 @@
-# Logseq HUD Do
+# Logseq HUD->Do
+
+![Logo](./docs/images/logo.png)
+
+What does HUD->Do mean?
+It stands for Heads-Up Display, Now Do It. This extension brings your Logseq tasks out of the abyss of your daily Logseq journals and puts them right in your face until they actually get done.
 
 A native GNOME Shell 46–50 indicator with an offline, read-only Python backend for Logseq OG Markdown graphs.
 The backend requires Python 3.10+ on Linux with no third-party Python dependencies.
@@ -100,9 +105,9 @@ A graph actively being rewritten is not a graph-wide filesystem snapshot.
 
 Targets GNOME Shell **46, 47, 48, 49 and 50**, with GJS, Python 3.10+, GTK 4, libadwaita and
 `glib-compile-schemas` (provided by the GNOME desktop development/runtime packages).
-The installed development environment reports GNOME Shell 46.0 and GJS 1.80.2.
+The original development environment was GNOME Shell 46.0 and GJS 1.80.2.
 Metadata declares these five versions based on static API review; live runtime
-compatibility is not yet verified on any version. See [compatibility evidence](docs/gnome-compatibility.md).
+compatibility is not yet verified on any version other than 46.0. See [compatibility evidence](docs/gnome-compatibility.md).
 
 ```sh
 sh scripts/install-extension.sh
