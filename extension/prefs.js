@@ -23,8 +23,15 @@ export default class Preferences extends ExtensionPreferences {
             dialog.add_button('Unhide All', Gtk.ResponseType.ACCEPT);
             dialog.set_default_response(Gtk.ResponseType.CANCEL);
             dialog.connect('response', (_dialog, response) => {
-                if (response === Gtk.ResponseType.ACCEPT)
-                    writeHidden(settings, []);
+                if (response === Gtk.ResponseType.ACCEPT) {
+                    try {
+                        writeHidden(settings, []);
+                        group.description = '';
+                    } catch (error) {
+                        group.description = error.message;
+                        return;
+                    }
+                }
                 dialog.destroy();
             });
             dialog.present();

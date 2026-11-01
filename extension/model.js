@@ -178,10 +178,15 @@ export function logicalIdentity(task) {
     return JSON.stringify([task.graph_path, task.source_page, text, task.scheduled]);
 }
 
+const hiddenRecordFields = {
+    key: {value: (_task, key) => key, valid: value => typeof value === 'string'},
+    description: {value: (_task, key) => JSON.parse(key)[2], valid: value => typeof value === 'string'},
+    graph: {value: task => task.graph, valid: value => typeof value === 'string'},
+    scheduled: {value: task => task.scheduled, valid: value => value === null || typeof value === 'string'},
+};
+
 function validHiddenRecord(record) {
-    if (!record || typeof record.key !== 'string' ||
-        typeof record.description !== 'string' || typeof record.graph !== 'string' ||
-        !(record.scheduled === null || typeof record.scheduled === 'string'))
+    if (!record || !Object.entries(hiddenRecordFields).every(([field, contract]) => contract.valid(record[field])))
         return false;
     try {
         const key = JSON.parse(record.key);
@@ -218,7 +223,7 @@ function editHidden(settings, key, replacement) {
     const registry = readRegistry(settings);
     const matching = record => validHiddenRecord(record) && record.key === key;
     if (!replacement && registry.tasks.some(record => matching(record) &&
-        Object.keys(record).some(field => !['key', 'description', 'graph', 'scheduled'].includes(field))))
+        Object.keys(record).some(field => !Object.hasOwn(hiddenRecordFields, field))))
         throw new Error('This hidden task contains unknown fields. No changes were saved. Use confirmed Unhide All in Preferences to reset the registry.');
     const exists = registry.tasks.some(matching);
     registry.tasks = registry.tasks.flatMap(record => matching(record)
@@ -234,12 +239,14 @@ export function unhideTask(settings, key) {
 }
 
 export function writeHidden(settings, tasks) {
-    settings.set_string('hidden-tasks-v2', JSON.stringify({version: hiddenRegistryVersion, tasks}));
+    if (settings.set_string('hidden-tasks-v2', JSON.stringify({version: hiddenRegistryVersion, tasks})) === false)
+        throw new Error('Hidden tasks could not be saved. Check that the settings are writable and try again.');
 }
 
 export function hideTask(settings, task) {
     const key = logicalIdentity(task);
-    editHidden(settings, key, {key, description: JSON.parse(key)[2], graph: task.graph, scheduled: task.scheduled});
+    editHidden(settings, key, Object.fromEntries(Object.entries(hiddenRecordFields)
+        .map(([field, contract]) => [field, contract.value(task, key)])));
 }
 
 export function visibleTasks(data, settings) {

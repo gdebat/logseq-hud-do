@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {hideTask, unhideTask, logicalIdentity, visibleTasks, displayContent} from '../extension/model.js';
+import fs from 'node:fs';
+import {hideTask, unhideTask, logicalIdentity, visibleTasks, displayContent, readHidden} from '../extension/model.js';
 
 const task = {graph_path: '/graph', source_page: 'Page', content: 'Task', graph: 'Graph', scheduled: null};
 const key = logicalIdentity(task);
@@ -56,3 +57,30 @@ for (const name of process.argv.slice(2).length ? process.argv.slice(2) : Object
     cases[name]();
     console.log(name + ' passed');
 }
+
+async function checkFieldAgreement() {
+    const source = fs.readFileSync(new URL('../extension/model.js', import.meta.url), 'utf8');
+    const extended = source.replace('const hiddenRecordFields = {',
+        "const hiddenRecordFields = { supportedExtension: {value: () => 'value', valid: value => value === 'value'},");
+    assert.notEqual(extended, source);
+    const extendedModel = await import('data:text/javascript;base64,' + Buffer.from(extended).toString('base64'));
+    for (const model of [{hideTask, unhideTask, readHidden}, extendedModel]) {
+        for (const scheduled of [null, '2026-11-01']) {
+            raw = JSON.stringify({version: 2, tasks: []});
+            const input = {...task, scheduled};
+            model.hideTask(settings, input);
+            const [generated] = JSON.parse(raw).tasks;
+            assert.deepEqual(generated, {...record, key: logicalIdentity(input), scheduled,
+                ...(model === extendedModel ? {supportedExtension: 'value'} : {})});
+            assert.deepEqual(model.readHidden(settings), [generated]);
+            model.unhideTask(settings, generated.key);
+            assert.deepEqual(JSON.parse(raw).tasks, []);
+            if (model === extendedModel) {
+                raw = JSON.stringify({version: 2, tasks: [{...generated, supportedExtension: 42}]});
+                assert.deepEqual(model.readHidden(settings), []);
+            }
+        }
+    }
+}
+await checkFieldAgreement();
+console.log('Supported-field construction, validation and Unhide agreement passed');
