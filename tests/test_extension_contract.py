@@ -25,7 +25,7 @@ class ContractTests(unittest.TestCase):
             (graph / 'pages/tasks.md').write_text('\n'.join(lines))
             subprocess.run(['node', '--input-type=module', '-e', "import {statuses, priorities} from './extension/model.js'; import assert from 'node:assert/strict'; const expected = JSON.parse(process.argv[1]); assert.deepEqual(statuses, expected[0]); assert.deepEqual(Object.keys(priorities), expected[1]);", json.dumps([STATUSES, PRIORITIES])], check=True, cwd=ROOT)
             result = subprocess.run(['python3', '-m', 'logseq_hud_do', f'--graph={graph}', '--cache', str(Path(tmp) / 'cache')], capture_output=True, text=True, check=True)
-            expected_fields = {'id', 'content', 'status', 'priority', 'graph',
+            expected_fields = {'graph_path', 'id', 'content', 'status', 'priority', 'graph',
                                'source_file', 'source_page', 'journal_date',
                                'block_location', 'block_uuid', 'scheduled',
                                'deadline', 'deep_link'}
@@ -50,6 +50,26 @@ for (const key of ['refresh-interval', 'horizon']) {
 }
 """
             subprocess.run(['gjs', '-c', code, tmp], check=True)
+
+    def test_hidden_registry_persists_between_processes(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            shutil.copy(next((ROOT / 'extension/schemas').glob('*.xml')), tmp)
+            subprocess.run(['glib-compile-schemas', '--strict', tmp], check=True)
+            env = dict(os.environ, GSETTINGS_BACKEND='keyfile', XDG_CONFIG_HOME=tmp)
+            setup = """const Gio = imports.gi.Gio;
+const source = Gio.SettingsSchemaSource.new_from_directory(ARGV[0], Gio.SettingsSchemaSource.get_default(), false);
+const settings = new Gio.Settings({settings_schema: source.lookup('org.gnome.shell.extensions.logseq-hud-do', false)});
+"""
+            registry = json.dumps({'version': 2, 'tasks': [
+                {'key': '["/graph","Page","Task",null]', 'description': 'Task',
+                 'graph': 'Graph', 'scheduled': None}]})
+            subprocess.run(['gjs', '-c', setup +
+                            "settings.set_string('hidden-tasks-v2', ARGV[1]); Gio.Settings.sync();",
+                            tmp, registry], env=env, check=True)
+            subprocess.run(['gjs', '-c', setup +
+                            "if (settings.get_string('hidden-tasks-v2') !== ARGV[1]) throw Error('Persistence failed');",
+                            tmp, registry], env=env, check=True)
 
     def test_symlink_roots(self):
         subprocess.run(['node', 'tests/extension-prefs.mjs', json.dumps(GRAPH_ROOTS)], check=True, cwd=ROOT)

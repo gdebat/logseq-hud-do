@@ -1,4 +1,4 @@
-import {compileTextFilter, defaultTextFilters, defaultBlockFilters} from '../extension/model.js';
+import {compileTextFilter, defaultTextFilters, defaultBlockFilters, readHidden, writeHidden} from '../extension/model.js';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
@@ -18,6 +18,10 @@ const queriedRoots = new Set();
 const bindings = [];
 let saved = 0;
 const settings = {
+    registry: '{"version":2,"tasks":[]}',
+    get_string: () => settings.registry,
+    set_string: (_key, value) => { settings.registry = value; settings.onHidden(); },
+    connect: (_signal, callback) => { settings.onHidden = callback; return 1; }, disconnect() {},
     get_strv: () => defaultTextFilters,
     set_strv: (key, patterns) => { assert.equal(key, 'task-text-filters'); settings.patterns = patterns; },
     get_value: key => ({deep_unpack: () => key === 'task-block-filters' ? defaultBlockFilters : []}),
@@ -26,9 +30,9 @@ const settings = {
     bind: (key, row) => bindings.push([key, row]),
 };
 const context = vm.createContext({
-    TextDecoder, compileTextFilter,
+    TextDecoder, compileTextFilter, readHidden, writeHidden,
     Adw: {PreferencesPage: Widget, PreferencesGroup: Widget, ActionRow: Widget, EntryRow: Widget, SpinRow: Widget, SwitchRow: Widget},
-    Gtk: {Button: Widget, Adjustment: Widget, Align: {CENTER: 0}},
+    Gtk: {MessageDialog: Widget, ButtonsType: {NONE: 0}, ResponseType: {CANCEL: 0, ACCEPT: 1}, SearchEntry: Widget, Button: Widget, Adjustment: Widget, Align: {CENTER: 0}},
     GLib: {path_is_absolute: path => path.startsWith('/'), Variant: class { constructor(type, value) { assert.equal(type, 'a(ss)'); this.value = value; } }},
     Gio: {SettingsBindFlags: {DEFAULT: 0}, FileQueryInfoFlags: {NOFOLLOW_SYMLINKS: 1}, FileType: {DIRECTORY: 2},
         File: {new_for_path: path => ({load_contents: () => [true, fs.readFileSync(path)], query_exists: () => true, get_child: name => (queriedRoots.add(name), {query_file_type: flags => {assert.equal(flags, 1); return roots[name];}})})}},
@@ -86,3 +90,34 @@ blocks.children[2].children[0].handlers.clicked();
 assert.equal(settings.blocks.length, 2);
 blocks.children[0].children[0].handlers.clicked();
 assert.equal(JSON.stringify(settings.blocks), JSON.stringify(defaultBlockFilters));
+
+const hidden = window.children[0].children[3];
+const records = [
+    {key: 'opaque-one', description: 'First task', graph: 'Personal', scheduled: '2026-11-01'},
+    {key: 'opaque-two', description: 'Second task', graph: 'Work', scheduled: null},
+];
+writeHidden(settings, records);
+assert.equal(hidden.children[2].title, 'First task');
+assert.equal(hidden.children[2].subtitle, 'Personal · 2026-11-01');
+assert(!JSON.stringify(hidden.children).includes('opaque-one'));
+hidden.children[0].text = 'work';
+hidden.children[0].handlers['search-changed']();
+assert.equal(hidden.children.length, 3);
+assert.equal(hidden.children[2].title, 'Second task');
+hidden.children[2].children[0].handlers.clicked();
+assert.equal(readHidden(settings).length, 1);
+assert.equal(hidden.children.length, 2);
+hidden.children[0].text = '';
+hidden.children[0].handlers['search-changed']();
+let confirmation;
+Widget.prototype.add_button = function () { confirmation = this; };
+Widget.prototype.set_default_response = function (value) { this.defaultResponse = value; };
+Widget.prototype.present = function () {};
+Widget.prototype.destroy = function () {};
+hidden.children[1].children[0].handlers.clicked();
+assert.equal(confirmation.defaultResponse, context.Gtk.ResponseType.CANCEL);
+confirmation.handlers.response(confirmation, context.Gtk.ResponseType.CANCEL);
+assert.equal(readHidden(settings).length, 1);
+hidden.children[1].children[0].handlers.clicked();
+confirmation.handlers.response(confirmation, context.Gtk.ResponseType.ACCEPT);
+assert.equal(readHidden(settings).length, 0);

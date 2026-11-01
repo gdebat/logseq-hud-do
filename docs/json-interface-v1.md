@@ -7,7 +7,7 @@ coordinated producer/consumer changes. No runtime negotiation is performed.
 
 Successful stdout is one JSON object with category arrays `today`, `overdue`,
 `upcoming`, in that display order. Every task has `id`, `content`, `status`,
-`priority`, `graph`, `source_file`, `source_page`, `journal_date`,
+`priority`, `graph`, `graph_path`, `source_file`, `source_page`, `journal_date`,
 `block_location`, `block_uuid`, `scheduled`, `deadline`, and `deep_link`.
 Dates are ISO date strings or null; priority is A, B, C or null; status is TODO
 or DOING. `block_location` contains the one-based integer `line`.
@@ -29,3 +29,6 @@ names, explicit `title::`, and decoded namespace filenames. `deep_link` prefers
 a stored block UUID; otherwise it targets that title. Display aliases never
 select the graph. Optional CLI diagnostics include per-task navigation resolution
 without changing task fields. See [manual acceptance](navigation-acceptance.md).
+
+`graph_path` is the canonical absolute graph directory, independent of display aliases.
+It is included on both cached and freshly parsed tasks.

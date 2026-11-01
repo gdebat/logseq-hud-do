@@ -1,4 +1,4 @@
-import {displayContent, compileTextFilter, backendArguments, parseTasks, taskPresentation, RefreshController, sections} from '../extension/model.js';
+import {displayContent, compileTextFilter, backendArguments, parseTasks, taskPresentation, RefreshController, sections, logicalIdentity, hideTask, visibleTasks, readHidden, writeHidden} from '../extension/model.js';
 
 function assert(value, message) {
     if (!value)
@@ -7,7 +7,7 @@ function assert(value, message) {
 function equal(actual, expected) {
     assert(JSON.stringify(actual) === JSON.stringify(expected), `${JSON.stringify(actual)} != ${JSON.stringify(expected)}`);
 }
-const task = {content: '<b>Literal</b>', graph: 'Personal', source_page: 'Page', status: 'TODO', priority: null, scheduled: null, deep_link: 'logseq://graph/Personal?page=Page'};
+const task = {content: '<b>Literal</b>', graph: 'Personal', graph_path: '/graphs/personal', source_page: 'Page', status: 'TODO', priority: null, scheduled: null, deep_link: 'logseq://graph/Personal?page=Page'};
 equal(sections, ['today', 'overdue', 'upcoming']);
 const data = {today: [task, {...task, status: 'DOING'}], overdue: [], upcoming: []};
 equal(parseTasks(JSON.stringify(data)), data);
@@ -133,3 +133,35 @@ equal(displayContent('Keep\nrelay-id:: value\n:LOGBOOK:\nhidden\n:END:', []), 'K
 equal(displayContent('Keep\nBEGIN\nhidden\nEND\nrelay-id:: value', undefined, [['BEGIN', 'END']]), 'Keep');
 equal(displayContent('Keep', [], [['', 'END'], ['BEGIN', ' ']]), 'Keep');
 equal(displayContent('A\nBEGIN\nx\nEND\nB', [], [['BEGIN', 'END'], ['BEGIN', 'OTHER']]), 'A\nB');
+
+const identity = logicalIdentity(task);
+for (const change of [
+    {status: 'DOING'}, {priority: 'A'}, {content: '  [#A] <b>Literal</b>  '},
+    {block_uuid: 'different', id: 'different', block_location: {line: 999}}, {graph: 'Renamed alias'},
+]) equal(logicalIdentity({...task, ...change}), identity);
+for (const change of [
+    {content: '<b>literal</b>'}, {content: '<b>Literal!</b>'}, {content: 'Changed'}, {content: 'TODO <b>Literal</b>'},
+    {scheduled: '2026-11-01'}, {source_page: 'Other'}, {graph_path: '/graphs/other'},
+]) assert(logicalIdentity({...task, ...change}) !== identity, 'logical identity changes');
+equal(logicalIdentity({...task, content: 'One \t two\nThree'}),
+    logicalIdentity({...task, content: 'One two\nThree'}));
+assert(logicalIdentity({...task, content: 'One\nTwo'}) !== logicalIdentity({...task, content: 'One Two'}), 'multiline preserved');
+const journal = {...task, source_page: 'Nov 1st, 2026', journal_date: '2026-11-01'};
+equal(logicalIdentity(journal), logicalIdentity({...journal, source_file: 'journals/renamed.md'}));
+let saved = '{"version":2,"tasks":[]}';
+const settings = {get_string: () => saved, set_string: (_key, value) => { saved = value; }};
+hideTask(settings, task);
+hideTask(settings, {...task, status: 'DOING'});
+equal(readHidden(settings).length, 1);
+const duplicates = {today: [task, {...task, status: 'DOING'}, {...task, scheduled: '2026-11-02'}], overdue: [], upcoming: []};
+equal(visibleTasks(duplicates, settings).today.length, 1);
+writeHidden(settings, []);
+let release;
+const hiddenController = new RefreshController(() => new Promise(resolve => { release = resolve; }),
+    data => equal(visibleTasks(data, settings).today.length, 1), message => { throw Error(message); });
+const refresh = hiddenController.refresh();
+hideTask(settings, task);
+release(duplicates);
+await refresh;
+writeHidden(settings, []);
+equal(visibleTasks(duplicates, settings).today.length, 3);

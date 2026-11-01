@@ -22,6 +22,7 @@ export function parseTasks(stdout) {
         for (const task of data[section]) {
             if (typeof task.content !== 'string' || typeof task.graph !== 'string' ||
                 typeof task.source_page !== 'string' ||
+                typeof task.graph_path !== 'string' || !task.graph_path.startsWith('/') ||
                 !statuses.includes(task.status) ||
                 (task.priority !== null && !Object.hasOwn(priorities, task.priority)) ||
                 (task.scheduled !== null && typeof task.scheduled !== 'string') ||
@@ -159,4 +160,36 @@ export class RefreshController {
         this.closed = true;
         this.pending = false;
     }
+}
+
+export function logicalIdentity(task) {
+    if (typeof task.graph_path !== 'string' || !task.graph_path.startsWith('/'))
+        throw new Error('Missing stable graph identity.');
+    const text = task.content.replace(/\[#(?:A|B|C)\]/g, '').split(/\r?\n/)
+        .map(line => line.replace(/[ \t]+/g, ' ').trim()).join('\n').trim();
+    return JSON.stringify([task.graph_path, task.source_page, text, task.scheduled]);
+}
+
+export function readHidden(settings) {
+    const registry = JSON.parse(settings.get_string('hidden-tasks-v2'));
+    if (registry.version !== 2 || !Array.isArray(registry.tasks))
+        throw new Error('Unsupported hidden task registry.');
+    return registry.tasks;
+}
+
+export function writeHidden(settings, tasks) {
+    settings.set_string('hidden-tasks-v2', JSON.stringify({version: 2, tasks}));
+}
+
+export function hideTask(settings, task) {
+    const key = logicalIdentity(task);
+    const tasks = readHidden(settings).filter(record => record.key !== key);
+    tasks.push({key, description: JSON.parse(key)[2], graph: task.graph, scheduled: task.scheduled});
+    writeHidden(settings, tasks);
+}
+
+export function visibleTasks(data, settings) {
+    const hidden = new Set(readHidden(settings).map(record => record.key));
+    return Object.fromEntries(sections.map(section => [section,
+        data[section].filter(task => !hidden.has(logicalIdentity(task)))]));
 }
