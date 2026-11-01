@@ -9,7 +9,21 @@ A native GNOME Shell 46–50 indicator with an offline, read-only Python backend
 The backend requires Python 3.10+ on Linux with no third-party Python dependencies.
 The extension bundles the existing backend; no permanent service is installed.
 
-Run from this directory:
+![Screenshot](./docs/images/screenshot.png)
+
+## TL;DR
+1.  ```sh
+    ./scripts/install.sh
+    ./scripts/install-extension.sh
+    ```
+2. Log out then log back in
+3.  ```sh
+    gnome-extension enable logseq-hud-do@local
+    ```
+
+## Scraper
+
+Run the scraper (backend) from this directory:
 
 ```sh
 python3 -m logseq_hud_do --graph /path/to/graph --graph-name Personal --diagnostics
