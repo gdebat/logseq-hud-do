@@ -201,7 +201,7 @@ and confirmed Unhide All, synchronized with the running extension.
 
 Hidden tasks persist in a version 2 GSettings registry. Identity uses the
 canonical graph directory, resolved originating page title (including journal
-titles), normalized task text and scheduled date. Identical tasks on the same
-page share hidden status. TODO/DOING and priority changes preserve it; text,
+titles), normalized task text and scheduled date. Tasks share hidden status when graph, page, normalized content and scheduled
+date all match. Different scheduled dates or graphs produce separate hidden identities. TODO/DOING and priority changes preserve it; text,
 page, graph directory or scheduled-date changes can reveal a task. Display
 filters do not affect identity. Old experimental UUID records are not migrated.

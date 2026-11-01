@@ -2,6 +2,9 @@ export const statuses = ['TODO', 'DOING'];
 export const sections = ['today', 'overdue', 'upcoming'];
 export const priorities = {A: ['High', 'high'], B: ['Medium', 'medium'], C: ['Low', 'low']};
 
+const priorityMarker = new RegExp(`\\[#(?:${Object.keys(priorities).join('|')})\\]`, 'g');
+export const hiddenRegistryVersion = 2;
+
 export function backendArguments(directory, graphs, horizon) {
     if (!graphs.length)
         throw new Error('Add a Logseq graph in Preferences.');
@@ -99,7 +102,7 @@ export function displayContent(content, patterns = defaultTextFilters, blocks = 
         try { return [compileTextFilter(pattern)]; } catch { return []; }
     });
     return filterBlocks(content.split(/\r?\n/), blocks).filter(line => !filters.some(filter => filter.test(line)))
-        .join('\n').replace(/\[#(?:A|B|C)\][ \t]*/g, '').trim();
+        .join('\n').replace(new RegExp(`${priorityMarker.source}[ \t]*`, 'g'), '').trim();
 }
 
 export function taskPresentation(task, patterns = defaultTextFilters, blocks = defaultBlockFilters) {
@@ -165,20 +168,41 @@ export class RefreshController {
 export function logicalIdentity(task) {
     if (typeof task.graph_path !== 'string' || !task.graph_path.startsWith('/'))
         throw new Error('Missing stable graph identity.');
-    const text = task.content.replace(/\[#(?:A|B|C)\]/g, '').split(/\r?\n/)
+    const text = task.content.split(/\r?\n/)
+        .map((line, index) => index === 0 ? line.replace(priorityMarker, '') : line)
         .map(line => line.replace(/[ \t]+/g, ' ').trim()).join('\n').trim();
     return JSON.stringify([task.graph_path, task.source_page, text, task.scheduled]);
 }
 
+function validHiddenRecord(record) {
+    if (!record || typeof record.key !== 'string' ||
+        typeof record.description !== 'string' || typeof record.graph !== 'string' ||
+        !(record.scheduled === null || typeof record.scheduled === 'string'))
+        return false;
+    try {
+        const key = JSON.parse(record.key);
+        return Array.isArray(key) && key.length === 4 &&
+            typeof key[0] === 'string' && key[0].startsWith('/') &&
+            typeof key[1] === 'string' && typeof key[2] === 'string' &&
+            key[2] === record.description && key[3] === record.scheduled;
+    } catch {
+        return false;
+    }
+}
+
 export function readHidden(settings) {
-    const registry = JSON.parse(settings.get_string('hidden-tasks-v2'));
-    if (registry.version !== 2 || !Array.isArray(registry.tasks))
-        throw new Error('Unsupported hidden task registry.');
-    return registry.tasks;
+    try {
+        const registry = JSON.parse(settings.get_string('hidden-tasks-v2'));
+        if (!registry || registry.version !== hiddenRegistryVersion || !Array.isArray(registry.tasks))
+            return [];
+        return registry.tasks.filter(validHiddenRecord);
+    } catch {
+        return [];
+    }
 }
 
 export function writeHidden(settings, tasks) {
-    settings.set_string('hidden-tasks-v2', JSON.stringify({version: 2, tasks}));
+    settings.set_string('hidden-tasks-v2', JSON.stringify({version: hiddenRegistryVersion, tasks}));
 }
 
 export function hideTask(settings, task) {

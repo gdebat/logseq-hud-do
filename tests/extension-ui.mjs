@@ -292,3 +292,29 @@ assert.equal(restarted._count.text, '0');
 settings.set_string('hidden-tasks-v2', '{"version":2,"tasks":[]}');
 assert.equal(restarted._count.text, '2');
 restarted.disable();
+
+for (const raw of ['{', 'null', '{}', '[]', '{"version":99,"tasks":[]}',
+    '{"version":2,"tasks":null}', '{"version":2,"tasks":[null,{},42]}',
+    JSON.stringify({version: 2, tasks: [{key: JSON.stringify(['/Graph', 'Page', task.content, null])}]})]) {
+    registry = raw;
+    const safe = new context.Hud();
+    safe._runBackend = hiding._runBackend;
+    safe.enable();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(safe._count.text, '2');
+    safe._confirmHide(task);
+    safe._dialog.buttons[1].action();
+    assert.equal(safe._count.text, '0');
+    safe.disable();
+}
+registry = '{"version":2,"tasks":[]}';
+hideTask(settings, task);
+const validRegistry = JSON.parse(registry);
+validRegistry.tasks.push(null, {}, {key: validRegistry.tasks[0].key});
+registry = JSON.stringify(validRegistry);
+const mixedHud = new context.Hud();
+mixedHud._runBackend = hiding._runBackend;
+mixedHud.enable();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(mixedHud._count.text, '0');
+mixedHud.disable();

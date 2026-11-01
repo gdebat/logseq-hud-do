@@ -33,7 +33,49 @@ class ContractTests(unittest.TestCase):
                 for task in tasks:
                     self.assertEqual(set(task), expected_fields)
                     self.assertEqual(set(task['block_location']), {'line'})
-            subprocess.run(['node', '--input-type=module', '-e', "import {parseTasks, sections, taskPresentation} from './extension/model.js'; import fs from 'node:fs'; import assert from 'node:assert/strict'; const data = parseTasks(fs.readFileSync(0, 'utf8')); assert.deepEqual(Object.keys(data).sort(), [...sections].sort()); for (const section of sections) { assert.equal(data[section].length, Number(process.argv[1])); for (const t of data[section]) { const v = taskPresentation(t); assert.equal(v.doing, t.status === 'DOING'); assert.equal(v.priority !== null, t.priority !== null); } }", str(len(STATUSES) * (len(PRIORITIES) + 1))], input=result.stdout, text=True, check=True, cwd=ROOT)
+            subprocess.run(['node', '--input-type=module', '-e', "import {parseTasks, sections, taskPresentation, logicalIdentity, displayContent} from './extension/model.js'; import fs from 'node:fs'; import assert from 'node:assert/strict'; const data = parseTasks(fs.readFileSync(0, 'utf8')); assert.deepEqual(Object.keys(data).sort(), [...sections].sort()); for (const section of sections) { assert.equal(data[section].length, Number(process.argv[1])); for (const t of data[section]) { const v = taskPresentation(t); assert.equal(v.doing, t.status === 'DOING'); assert.equal(v.priority !== null, t.priority !== null); assert.equal(displayContent(t.content), 'Task'); assert.equal(logicalIdentity(t), logicalIdentity({...t, content: 'Task', priority: null})); } }", str(len(STATUSES) * (len(PRIORITIES) + 1))], input=result.stdout, text=True, check=True, cwd=ROOT)
+
+    def test_parser_identity_and_cross_graph_hiding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            graphs = [Path(tmp) / name for name in ('one', 'two')]
+            for graph in graphs:
+                (graph / 'pages').mkdir(parents=True)
+                (graph / 'pages/tasks.md').write_text(
+                    f'- TODO Report\n  note [#A]\n  SCHEDULED: <{dt.date.today()}>\n'
+                    f'- TODO Report\n  note\n  SCHEDULED: <{dt.date.today()}>\n'
+                    f'- TODO Report\n  note [#C]\n  SCHEDULED: <{dt.date.today()}>\n')
+            command = ['python3', '-m', 'logseq_hud_do', '--cache', str(Path(tmp) / 'cache')]
+            command.extend(f'--graph={graph}' for graph in graphs)
+            for _ in range(2):
+                result = subprocess.run(command, capture_output=True, text=True, check=True, cwd=ROOT)
+                subprocess.run(['node', '--input-type=module', '-e', """
+import {parseTasks, logicalIdentity, hideTask, visibleTasks} from './extension/model.js';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const data = parseTasks(fs.readFileSync(0, 'utf8'));
+const tasks = Object.values(data).flat();
+assert.equal(tasks.length, 6);
+assert.deepEqual([...new Set(tasks.map(t => t.graph_path))].sort(), JSON.parse(process.argv[1]).sort());
+assert.equal(new Set(tasks.map(logicalIdentity)).size, 6);
+let raw = '{"version":2,"tasks":[]}';
+const settings = {get_string: () => raw, set_string: (_, value) => raw = value};
+hideTask(settings, tasks[0]);
+const visible = Object.values(visibleTasks(data, settings)).flat();
+assert.equal(visible.length, 5);
+assert.equal(visible.filter(t => t.graph_path !== tasks[0].graph_path).length, 3);
+assert(visible.some(t => t.graph_path === tasks[0].graph_path));
+""", json.dumps([str(g.resolve()) for g in graphs])], input=result.stdout, text=True, check=True, cwd=ROOT)
+
+    def test_hidden_identity_and_badge_documentation(self):
+        readme = (ROOT / 'README.md').read_text()
+        self.assertIn('graph, page, normalized content and scheduled', readme)
+        self.assertIn('Different scheduled dates or graphs produce separate hidden identities.', readme)
+        requirements = (ROOT / 'docs/requirements.md').read_text()
+        self.assertIn('prominent green `Doing` badge', requirements)
+        self.assertIn('`Doing` status badge after the priority badge', requirements)
+        self.assertNotIn('`DOING` badge', requirements)
+        self.assertIn('priority badges followed by a green `Doing` badge',
+                      (ROOT / 'docs/ui-acceptance.md').read_text())
 
     def test_real_schema_ranges(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -61,15 +103,25 @@ for (const key of ['refresh-interval', 'horizon']) {
 const source = Gio.SettingsSchemaSource.new_from_directory(ARGV[0], Gio.SettingsSchemaSource.get_default(), false);
 const settings = new Gio.Settings({settings_schema: source.lookup('org.gnome.shell.extensions.logseq-hud-do', false)});
 """
-            registry = json.dumps({'version': 2, 'tasks': [
-                {'key': '["/graph","Page","Task",null]', 'description': 'Task',
-                 'graph': 'Graph', 'scheduled': None}]})
-            subprocess.run(['gjs', '-c', setup +
-                            "settings.set_string('hidden-tasks-v2', ARGV[1]); Gio.Settings.sync();",
-                            tmp, registry], env=env, check=True)
-            subprocess.run(['gjs', '-c', setup +
-                            "if (settings.get_string('hidden-tasks-v2') !== ARGV[1]) throw Error('Persistence failed');",
-                            tmp, registry], env=env, check=True)
+            module = (ROOT / 'extension/model.js').as_uri()
+            script = Path(tmp) / 'registry.mjs'
+            script.write_text(f"import {{readHidden, hideTask, hiddenRegistryVersion}} from '{module}';\n" +
+                              "import Gio from 'gi://Gio';\n" + setup.replace('const Gio = imports.gi.Gio;\n', '') + """
+function check(value) { if (!value) throw Error('Registry contract failed'); }
+check(JSON.parse(settings.get_string('hidden-tasks-v2')).version === hiddenRegistryVersion);
+if (ARGV[1] === 'write') {
+    check(readHidden(settings).length === 0);
+    hideTask(settings, {graph_path: '/graph', source_page: 'Page', content: 'Task', graph: 'Graph', scheduled: null});
+    Gio.Settings.sync();
+} else {
+    check(readHidden(settings).length === 1);
+    check(readHidden(settings)[0].description === 'Task');
+    settings.set_string('hidden-tasks-v2', JSON.stringify({version: hiddenRegistryVersion + 1, tasks: readHidden(settings)}));
+    check(readHidden(settings).length === 0);
+}
+""")
+            for mode in ('write', 'read'):
+                subprocess.run(['gjs', '-m', str(script), tmp, mode], env=env, check=True)
 
     def test_symlink_roots(self):
         subprocess.run(['node', 'tests/extension-prefs.mjs', json.dumps(GRAPH_ROOTS)], check=True, cwd=ROOT)

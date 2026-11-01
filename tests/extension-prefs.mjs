@@ -93,8 +93,8 @@ assert.equal(JSON.stringify(settings.blocks), JSON.stringify(defaultBlockFilters
 
 const hidden = window.children[0].children[3];
 const records = [
-    {key: 'opaque-one', description: 'First task', graph: 'Personal', scheduled: '2026-11-01'},
-    {key: 'opaque-two', description: 'Second task', graph: 'Work', scheduled: null},
+    {key: JSON.stringify(['/graph', 'Page', 'First task', '2026-11-01']), description: 'First task', graph: 'Personal', scheduled: '2026-11-01'},
+    {key: JSON.stringify(['/graph', 'Page', 'Second task', null]), description: 'Second task', graph: 'Work', scheduled: null},
 ];
 writeHidden(settings, records);
 assert.equal(hidden.children[2].title, 'First task');
@@ -121,3 +121,27 @@ assert.equal(readHidden(settings).length, 1);
 hidden.children[1].children[0].handlers.clicked();
 confirmation.handlers.response(confirmation, context.Gtk.ResponseType.ACCEPT);
 assert.equal(readHidden(settings).length, 0);
+
+for (const raw of ['{', 'null', '{}', '[]', '{"version":99,"tasks":[]}',
+    '{"version":2,"tasks":null}', JSON.stringify({version: 2, tasks: [null, {}, {key: records[0].key}]})]) {
+    settings.registry = raw;
+    const safeWindow = new Widget();
+    new context.Prefs().fillPreferencesWindow(safeWindow);
+    const group = safeWindow.children[0].children[3];
+    assert.equal(group.children.length, 2);
+    group.children[0].text = 'task';
+    group.children[0].handlers['search-changed']();
+    group.children[1].children[0].handlers.clicked();
+    confirmation.handlers.response(confirmation, context.Gtk.ResponseType.ACCEPT);
+    assert.equal(readHidden(settings).length, 0);
+}
+settings.registry = JSON.stringify({version: 2, tasks: [null, ...records, {},
+    {...records[0], key: 'invalid'}, {...records[0], description: null},
+    {...records[0], scheduled: 42}, {...records[0], graph: null}]});
+const mixedWindow = new Widget();
+new context.Prefs().fillPreferencesWindow(mixedWindow);
+assert.equal(readHidden(settings).length, 2);
+const mixed = mixedWindow.children[0].children[3];
+assert.equal(mixed.children.length, 4);
+mixed.children[2].children[0].handlers.clicked();
+assert.equal(readHidden(settings).length, 1);
