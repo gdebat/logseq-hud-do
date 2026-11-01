@@ -66,6 +66,35 @@ assert.equal(visible.filter(t => t.graph_path !== tasks[0].graph_path).length, 3
 assert(visible.some(t => t.graph_path === tasks[0].graph_path));
 """, json.dumps([str(g.resolve()) for g in graphs])], input=result.stdout, text=True, check=True, cwd=ROOT)
 
+    def test_continuation_priority_presentation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            graph = Path(tmp) / 'graph'
+            (graph / 'pages').mkdir(parents=True)
+            (graph / 'pages/tasks.md').write_text('\n'.join(
+                f'- DOING [#{marker}] Report\n  note [#{marker}]\n  SCHEDULED: <{dt.date.today()}>'
+                for marker in PRIORITIES))
+            result = subprocess.run(['python3', '-m', 'logseq_hud_do', f'--graph={graph}',
+                                     '--cache', str(Path(tmp) / 'cache')],
+                                    capture_output=True, text=True, check=True, cwd=ROOT)
+            subprocess.run(['node', '--input-type=module', '-e', """
+import {parseTasks, taskPresentation, logicalIdentity, priorities} from './extension/model.js';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const tasks = Object.values(parseTasks(fs.readFileSync(0, 'utf8'))).flat();
+assert.equal(tasks.length, 3);
+for (const task of tasks) {
+    const note = `note [#${task.priority}]`;
+    assert.equal(task.content, `[#${task.priority}] Report\\n${note}`);
+    assert.equal(taskPresentation(task).content, `Report\\n${note}`);
+    assert.equal(taskPresentation(task, ['^Report']).content, note);
+    assert.equal(taskPresentation(task, [], [['Report', 'END']]).content, `Report\\n${note}`);
+    assert.deepEqual(taskPresentation(task).priority, priorities[task.priority]);
+    assert.equal(taskPresentation(task).doing, true);
+    assert.equal(logicalIdentity(task), logicalIdentity({...task, content: `Report\\n${note}`}));
+    assert.notEqual(logicalIdentity(task), logicalIdentity({...task, content: 'Report\\nnote'}));
+}
+"""], input=result.stdout, text=True, check=True, cwd=ROOT)
+
     def test_hidden_identity_and_badge_documentation(self):
         readme = (ROOT / 'README.md').read_text()
         self.assertIn('graph, page, normalized content and scheduled', readme)

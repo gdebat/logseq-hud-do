@@ -1,4 +1,4 @@
-import {displayContent, compileTextFilter, backendArguments, parseTasks, taskPresentation, RefreshController, sections, logicalIdentity, hideTask, visibleTasks, readHidden, writeHidden} from '../extension/model.js';
+import {displayContent, compileTextFilter, backendArguments, parseTasks, taskPresentation, RefreshController, sections, logicalIdentity, hideTask, visibleTasks, readHidden, writeHidden, unhideTask} from '../extension/model.js';
 
 function assert(value, message) {
     if (!value)
@@ -165,3 +165,35 @@ release(duplicates);
 await refresh;
 writeHidden(settings, []);
 equal(visibleTasks(duplicates, settings).today.length, 3);
+
+for (const raw of ['{', 'null', '{}', '[]', '{"version":99,"tasks":[{"future":true}]}', '{"version":2,"tasks":null}']) {
+    for (const action of [() => hideTask(settings, task), () => unhideTask(settings, identity)]) {
+        saved = raw;
+        let refused = false;
+        try { action(); } catch (error) { refused = error.message.includes('No changes were saved'); }
+        assert(refused, 'unsafe edit refused');
+        equal(saved, raw);
+        equal(readHidden(settings).length, 0);
+        equal(visibleTasks(duplicates, settings).today.length, 3);
+    }
+}
+const invalid = [null, {}, {key: identity, future: 'retain'}];
+saved = JSON.stringify({version: 2, extra: {retain: true}, tasks: invalid});
+hideTask(settings, task);
+equal(JSON.stringify(JSON.parse(saved).tasks.slice(0, 3)), JSON.stringify(invalid));
+unhideTask(settings, identity);
+equal(JSON.stringify(JSON.parse(saved)), JSON.stringify({version: 2, extra: {retain: true}, tasks: invalid}));
+for (const mismatch of [{description: 'Other task'}, {scheduled: '2026-12-31'}]) {
+    saved = '{"version":2,"tasks":[]}';
+    hideTask(settings, task);
+    const record = readHidden(settings)[0];
+    const sibling = {...task, content: 'Valid sibling'};
+    hideTask(settings, sibling);
+    const valid = readHidden(settings)[1];
+    saved = JSON.stringify({version: 2, tasks: [{...record, ...mismatch}, valid]});
+    equal(readHidden(settings).length, 1);
+    equal(readHidden(settings)[0].description, 'Valid sibling');
+    const visible = visibleTasks({today: [task, sibling], overdue: [], upcoming: []}, settings);
+    equal(visible.today.length, 1);
+    equal(visible.today[0].content, task.content);
+}

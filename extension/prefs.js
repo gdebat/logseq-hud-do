@@ -4,7 +4,7 @@ import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {compileTextFilter, readHidden, writeHidden} from './model.js';
+import {compileTextFilter, readHidden, writeHidden, unhideTask} from './model.js';
 
 export default class Preferences extends ExtensionPreferences {
     _hiddenTasks(page, window, settings) {
@@ -41,8 +41,14 @@ export default class Preferences extends ExtensionPreferences {
                     continue;
                 const row = new Adw.ActionRow({title: record.description, subtitle, use_markup: false});
                 const unhide = new Gtk.Button({label: 'Unhide', valign: Gtk.Align.CENTER});
-                unhide.connect('clicked', () => writeHidden(settings,
-                    readHidden(settings).filter(item => item.key !== record.key)));
+                unhide.connect('clicked', () => {
+                    try {
+                        unhideTask(settings, record.key);
+                        group.description = '';
+                    } catch (error) {
+                        group.description = error.message;
+                    }
+                });
                 row.add_suffix(unhide);
                 rows.push(row);
                 group.add(row);

@@ -101,8 +101,10 @@ export function displayContent(content, patterns = defaultTextFilters, blocks = 
     const filters = patterns.flatMap(pattern => {
         try { return [compileTextFilter(pattern)]; } catch { return []; }
     });
-    return filterBlocks(content.split(/\r?\n/), blocks).filter(line => !filters.some(filter => filter.test(line)))
-        .join('\n').replace(new RegExp(`${priorityMarker.source}[ \t]*`, 'g'), '').trim();
+    const lines = content.split(/\r?\n/);
+    lines[0] = lines[0].replace(new RegExp(`${priorityMarker.source}[ \t]*`, 'g'), '');
+    return filterBlocks(lines, blocks).filter(line => !filters.some(filter => filter.test(line)))
+        .join('\n').trim();
 }
 
 export function taskPresentation(task, patterns = defaultTextFilters, blocks = defaultBlockFilters) {
@@ -190,15 +192,36 @@ function validHiddenRecord(record) {
     }
 }
 
+function readRegistry(settings) {
+    let registry;
+    try {
+        registry = JSON.parse(settings.get_string('hidden-tasks-v2'));
+    } catch {
+        throw new Error('Hidden tasks could not be read. No changes were saved. Use confirmed Unhide All in Preferences to reset the registry.');
+    }
+    if (!registry || registry.version !== hiddenRegistryVersion || !Array.isArray(registry.tasks))
+        throw new Error('Hidden tasks have an invalid or unsupported format. No changes were saved. Use confirmed Unhide All in Preferences to reset the registry.');
+    return registry;
+}
+
 export function readHidden(settings) {
     try {
-        const registry = JSON.parse(settings.get_string('hidden-tasks-v2'));
-        if (!registry || registry.version !== hiddenRegistryVersion || !Array.isArray(registry.tasks))
-            return [];
-        return registry.tasks.filter(validHiddenRecord);
+        return readRegistry(settings).tasks.filter(validHiddenRecord);
     } catch {
         return [];
     }
+}
+
+function editHidden(settings, key, replacement) {
+    const registry = readRegistry(settings);
+    registry.tasks = registry.tasks.filter(record => !validHiddenRecord(record) || record.key !== key);
+    if (replacement)
+        registry.tasks.push(replacement);
+    settings.set_string('hidden-tasks-v2', JSON.stringify(registry));
+}
+
+export function unhideTask(settings, key) {
+    editHidden(settings, key);
 }
 
 export function writeHidden(settings, tasks) {
@@ -207,9 +230,7 @@ export function writeHidden(settings, tasks) {
 
 export function hideTask(settings, task) {
     const key = logicalIdentity(task);
-    const tasks = readHidden(settings).filter(record => record.key !== key);
-    tasks.push({key, description: JSON.parse(key)[2], graph: task.graph, scheduled: task.scheduled});
-    writeHidden(settings, tasks);
+    editHidden(settings, key, {key, description: JSON.parse(key)[2], graph: task.graph, scheduled: task.scheduled});
 }
 
 export function visibleTasks(data, settings) {

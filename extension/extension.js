@@ -215,9 +215,14 @@ export default class LogseqHudDo extends Extension {
         dialog.setButtons([
             {label: 'Cancel', default: true, key: Clutter.KEY_Escape, action: () => dialog.close()},
             {label: 'Hide Task', action: () => {
-                hideTask(this._settings, task);
-                dialog.close();
-                this._render();
+                try {
+                    hideTask(this._settings, task);
+                    dialog.close();
+                    this._render();
+                } catch (error) {
+                    dialog.close();
+                    this._showMessage(error.message);
+                }
             }},
         ]);
         dialog.connect('closed', () => { this._dialog = null; });

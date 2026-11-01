@@ -1,4 +1,4 @@
-import {compileTextFilter, defaultTextFilters, defaultBlockFilters, readHidden, writeHidden} from '../extension/model.js';
+import {compileTextFilter, defaultTextFilters, defaultBlockFilters, readHidden, writeHidden, unhideTask} from '../extension/model.js';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
@@ -30,7 +30,7 @@ const settings = {
     bind: (key, row) => bindings.push([key, row]),
 };
 const context = vm.createContext({
-    TextDecoder, compileTextFilter, readHidden, writeHidden,
+    TextDecoder, compileTextFilter, readHidden, writeHidden, unhideTask,
     Adw: {PreferencesPage: Widget, PreferencesGroup: Widget, ActionRow: Widget, EntryRow: Widget, SpinRow: Widget, SwitchRow: Widget},
     Gtk: {MessageDialog: Widget, ButtonsType: {NONE: 0}, ResponseType: {CANCEL: 0, ACCEPT: 1}, SearchEntry: Widget, Button: Widget, Adjustment: Widget, Align: {CENTER: 0}},
     GLib: {path_is_absolute: path => path.startsWith('/'), Variant: class { constructor(type, value) { assert.equal(type, 'a(ss)'); this.value = value; } }},
@@ -145,3 +145,12 @@ const mixed = mixedWindow.children[0].children[3];
 assert.equal(mixed.children.length, 4);
 mixed.children[2].children[0].handlers.clicked();
 assert.equal(readHidden(settings).length, 1);
+
+assert(JSON.parse(settings.registry).tasks.includes(null));
+const remaining = mixed.children[2];
+for (const raw of ['{', 'null', '{}', '[]', '{"version":99,"tasks":[]}', '{"version":2,"tasks":null}']) {
+    settings.registry = raw;
+    remaining.children[0].handlers.clicked();
+    assert.equal(settings.registry, raw);
+    assert.match(mixed.description, /No changes were saved/);
+}

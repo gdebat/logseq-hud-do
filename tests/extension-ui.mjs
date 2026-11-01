@@ -304,7 +304,15 @@ for (const raw of ['{', 'null', '{}', '[]', '{"version":99,"tasks":[]}',
     assert.equal(safe._count.text, '2');
     safe._confirmHide(task);
     safe._dialog.buttons[1].action();
-    assert.equal(safe._count.text, '0');
+    if (raw === '{' || !Array.isArray(JSON.parse(raw)?.tasks) || JSON.parse(raw).version !== 2) {
+        assert.equal(registry, raw);
+        assert.match(safe._message.label.text, /No changes were saved/);
+        assert.equal(safe._count.text, '2');
+    } else {
+        assert.equal(safe._count.text, '0');
+        for (const entry of JSON.parse(raw).tasks)
+            assert(JSON.parse(registry).tasks.some(value => JSON.stringify(value) === JSON.stringify(entry)));
+    }
     safe.disable();
 }
 registry = '{"version":2,"tasks":[]}';
