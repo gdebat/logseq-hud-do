@@ -4,9 +4,69 @@ import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {compileTextFilter} from './model.js';
+import {compileTextFilter, readHidden, writeHidden, unhideTask} from './model.js';
 
 export default class Preferences extends ExtensionPreferences {
+    _hiddenTasks(page, window, settings) {
+        const group = new Adw.PreferencesGroup({title: 'Hidden Tasks'});
+        page.add(group);
+        const search = new Gtk.SearchEntry({placeholder_text: 'Search hidden tasks'});
+        group.add(search);
+        const all = new Adw.ActionRow({title: 'Unhide All'});
+        const button = new Gtk.Button({label: 'Unhide All', valign: Gtk.Align.CENTER});
+        all.add_suffix(button);
+        group.add(all);
+        button.connect('clicked', () => {
+            const dialog = new Gtk.MessageDialog({transient_for: window, modal: true,
+                text: 'Unhide all tasks?', buttons: Gtk.ButtonsType.NONE});
+            dialog.add_button('Cancel', Gtk.ResponseType.CANCEL);
+            dialog.add_button('Unhide All', Gtk.ResponseType.ACCEPT);
+            dialog.set_default_response(Gtk.ResponseType.CANCEL);
+            dialog.connect('response', (_dialog, response) => {
+                if (response === Gtk.ResponseType.ACCEPT) {
+                    try {
+                        writeHidden(settings, []);
+                        group.description = '';
+                    } catch (error) {
+                        group.description = error.message;
+                        return;
+                    }
+                }
+                dialog.destroy();
+            });
+            dialog.present();
+        });
+        let rows = [];
+        const render = () => {
+            for (const row of rows)
+                group.remove(row);
+            rows = [];
+            const query = search.text.toLocaleLowerCase();
+            for (const record of readHidden(settings)) {
+                const subtitle = [record.graph, record.scheduled].filter(Boolean).join(' · ');
+                if (!`${record.description} ${subtitle}`.toLocaleLowerCase().includes(query))
+                    continue;
+                const row = new Adw.ActionRow({title: record.description, subtitle, use_markup: false});
+                const unhide = new Gtk.Button({label: 'Unhide', valign: Gtk.Align.CENTER});
+                unhide.connect('clicked', () => {
+                    try {
+                        unhideTask(settings, record.key);
+                        group.description = '';
+                    } catch (error) {
+                        group.description = error.message;
+                    }
+                });
+                row.add_suffix(unhide);
+                rows.push(row);
+                group.add(row);
+            }
+        };
+        search.connect('search-changed', render);
+        const signal = settings.connect('changed::hidden-tasks-v2', render);
+        window.connect('close-request', () => { settings.disconnect(signal); return false; });
+        render();
+    }
+
     fillPreferencesWindow(window) {
         const [, contents] = Gio.File.new_for_path(`${this.path}/logseq_hud_do/graph-roots.json`).load_contents(null);
         const graphRoots = JSON.parse(new TextDecoder().decode(contents));
@@ -127,6 +187,7 @@ export default class Preferences extends ExtensionPreferences {
         addBlockButton.connect('clicked', () => { addBlock(':LOGBOOK:', ':END:'); saveBlocks(); });
         addBlockRow.add_suffix(addBlockButton);
         blocks.add(addBlockRow);
+        this._hiddenTasks(page, window, settings);
         const refresh = new Adw.PreferencesGroup({title: 'Refresh and display'});
         page.add(refresh);
         for (const [key, title] of [

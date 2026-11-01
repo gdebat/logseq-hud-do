@@ -2,6 +2,9 @@ export const statuses = ['TODO', 'DOING'];
 export const sections = ['today', 'overdue', 'upcoming'];
 export const priorities = {A: ['High', 'high'], B: ['Medium', 'medium'], C: ['Low', 'low']};
 
+const priorityMarker = new RegExp(`\\[#(?:${Object.keys(priorities).join('|')})\\]`, 'g');
+export const hiddenRegistryVersion = 2;
+
 export function backendArguments(directory, graphs, horizon) {
     if (!graphs.length)
         throw new Error('Add a Logseq graph in Preferences.');
@@ -22,6 +25,7 @@ export function parseTasks(stdout) {
         for (const task of data[section]) {
             if (typeof task.content !== 'string' || typeof task.graph !== 'string' ||
                 typeof task.source_page !== 'string' ||
+                typeof task.graph_path !== 'string' || !task.graph_path.startsWith('/') ||
                 !statuses.includes(task.status) ||
                 (task.priority !== null && !Object.hasOwn(priorities, task.priority)) ||
                 (task.scheduled !== null && typeof task.scheduled !== 'string') ||
@@ -74,7 +78,7 @@ function filterBlocks(lines, blocks) {
     let opening = -1;
     let closing = null;
     for (let i = 0; i < lines.length; i++) {
-        const marker = lines[i].trim();
+        const marker = lines[i].text.trim();
         if (opening >= 0) {
             if (marker === closing) {
                 opening = -1;
@@ -97,8 +101,12 @@ export function displayContent(content, patterns = defaultTextFilters, blocks = 
     const filters = patterns.flatMap(pattern => {
         try { return [compileTextFilter(pattern)]; } catch { return []; }
     });
-    return filterBlocks(content.split(/\r?\n/), blocks).filter(line => !filters.some(filter => filter.test(line)))
-        .join('\n').replace(/\[#(?:A|B|C)\][ \t]*/g, '').trim();
+    const lines = content.split(/\r?\n/).map((text, index) => ({text, index}));
+    return filterBlocks(lines, blocks)
+        .filter(({text}) => !filters.some(filter => filter.test(text)))
+        .map(({text, index}) => index === 0
+            ? text.replace(new RegExp(`${priorityMarker.source}[ \t]*`, 'g'), '') : text)
+        .join('\n').trim();
 }
 
 export function taskPresentation(task, patterns = defaultTextFilters, blocks = defaultBlockFilters) {
@@ -159,4 +167,90 @@ export class RefreshController {
         this.closed = true;
         this.pending = false;
     }
+}
+
+export function logicalIdentity(task) {
+    if (typeof task.graph_path !== 'string' || !task.graph_path.startsWith('/'))
+        throw new Error('Missing stable graph identity.');
+    const text = task.content.split(/\r?\n/)
+        .map((line, index) => index === 0 ? line.replace(priorityMarker, '') : line)
+        .map(line => line.replace(/[ \t]+/g, ' ').trim()).join('\n').trim();
+    return JSON.stringify([task.graph_path, task.source_page, text, task.scheduled]);
+}
+
+const hiddenRecordFields = {
+    key: {value: (_task, key) => key, valid: value => typeof value === 'string'},
+    description: {value: (_task, key) => JSON.parse(key)[2], valid: value => typeof value === 'string'},
+    graph: {value: task => task.graph, valid: value => typeof value === 'string'},
+    scheduled: {value: task => task.scheduled, valid: value => value === null || typeof value === 'string'},
+};
+
+function validHiddenRecord(record) {
+    if (!record || !Object.entries(hiddenRecordFields).every(([field, contract]) => contract.valid(record[field])))
+        return false;
+    try {
+        const key = JSON.parse(record.key);
+        return Array.isArray(key) && key.length === 4 &&
+            typeof key[0] === 'string' && key[0].startsWith('/') &&
+            typeof key[1] === 'string' && typeof key[2] === 'string' &&
+            key[2] === record.description && key[3] === record.scheduled;
+    } catch {
+        return false;
+    }
+}
+
+function readRegistry(settings) {
+    let registry;
+    try {
+        registry = JSON.parse(settings.get_string('hidden-tasks-v2'));
+    } catch {
+        throw new Error('Hidden tasks could not be read. No changes were saved. Use confirmed Unhide All in Preferences to reset the registry.');
+    }
+    if (!registry || registry.version !== hiddenRegistryVersion || !Array.isArray(registry.tasks))
+        throw new Error('Hidden tasks have an invalid or unsupported format. No changes were saved. Use confirmed Unhide All in Preferences to reset the registry.');
+    return registry;
+}
+
+export function readHidden(settings) {
+    try {
+        return readRegistry(settings).tasks.filter(validHiddenRecord);
+    } catch {
+        return [];
+    }
+}
+
+function editHidden(settings, key, replacement) {
+    const registry = readRegistry(settings);
+    const matching = record => validHiddenRecord(record) && record.key === key;
+    if (!replacement && registry.tasks.some(record => matching(record) &&
+        Object.keys(record).some(field => !Object.hasOwn(hiddenRecordFields, field))))
+        throw new Error('This hidden task contains unknown fields. No changes were saved. Use confirmed Unhide All in Preferences to reset the registry.');
+    const exists = registry.tasks.some(matching);
+    registry.tasks = registry.tasks.flatMap(record => matching(record)
+        ? replacement ? [{...record, ...replacement}] : [] : [record]);
+    if (replacement && !exists)
+        registry.tasks.push(replacement);
+    if (settings.set_string('hidden-tasks-v2', JSON.stringify(registry)) === false)
+        throw new Error('Hidden tasks could not be saved. Check that the settings are writable and try again.');
+}
+
+export function unhideTask(settings, key) {
+    editHidden(settings, key);
+}
+
+export function writeHidden(settings, tasks) {
+    if (settings.set_string('hidden-tasks-v2', JSON.stringify({version: hiddenRegistryVersion, tasks})) === false)
+        throw new Error('Hidden tasks could not be saved. Check that the settings are writable and try again.');
+}
+
+export function hideTask(settings, task) {
+    const key = logicalIdentity(task);
+    editHidden(settings, key, Object.fromEntries(Object.entries(hiddenRecordFields)
+        .map(([field, contract]) => [field, contract.value(task, key)])));
+}
+
+export function visibleTasks(data, settings) {
+    const hidden = new Set(readHidden(settings).map(record => record.key));
+    return Object.fromEntries(sections.map(section => [section,
+        data[section].filter(task => !hidden.has(logicalIdentity(task)))]));
 }

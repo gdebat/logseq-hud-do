@@ -367,7 +367,7 @@ The dropdown must support:
 Only display a status indicator for `DOING` tasks.
 
 **DOING tasks:**
-- Display a prominent `DOING` badge.
+- Display a prominent green `Doing` badge.
 - Include an appropriate progress-style icon or symbol.
 - Use a GNOME-compatible accent color.
 - Ensure the indicator is visually distinguishable and accessible.
@@ -404,8 +404,8 @@ Requirements:
 Each task row should display:
 
 - Task description.
-- `DOING` status badge, only when the task is DOING.
 - High, Medium, or Low priority badge, only when a priority is assigned.
+- Green `Doing` status badge after the priority badge, only when the internal status is `DOING`.
 - Source graph.
 - Scheduled date or source context where relevant.
 

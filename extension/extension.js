@@ -4,10 +4,12 @@ import GLib from 'gi://GLib';
 import St from 'gi://St';
 import Pango from 'gi://Pango';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
+import * as Dialog from 'resource:///org/gnome/shell/ui/dialog.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-import {backendArguments, parseTasks, sections, taskPresentation, RefreshController} from './model.js';
+import {backendArguments, parseTasks, sections, taskPresentation, RefreshController, visibleTasks, hideTask} from './model.js';
 
 export default class LogseqHudDo extends Extension {
     enable() {
@@ -44,7 +46,11 @@ export default class LogseqHudDo extends Extension {
             if (open)
                 this._controller.refresh();
         });
-        this._settingsSignal = this._settings.connect('changed', () => {
+        this._settingsSignal = this._settings.connect('changed', (_settings, key) => {
+            if (key === 'hidden-tasks-v2') {
+                this._render();
+                return;
+            }
             this._render();
             this._schedule();
             this._controller.refresh(true);
@@ -126,13 +132,14 @@ export default class LogseqHudDo extends Extension {
     _render() {
         if (!this._data)
             return;
+        const data = visibleTasks(this._data, this._settings);
         this._message.hide();
-        this._count.text = this._settings.get_boolean('show-today-count') ? String(this._data.today.length) : '';
+        this._count.text = this._settings.get_boolean('show-today-count') ? String(data.today.length) : '';
         this._rows.destroy_all_children();
         for (const section of sections) {
             if (section !== 'today' && !this._settings.get_boolean(`show-${section}`))
                 continue;
-            const tasks = this._data[section];
+            const tasks = data[section];
             this._rows.add_child(new St.Label({text: `${section.toUpperCase()} (${tasks.length})`, style_class: 'hud-heading'}));
             if (!tasks.length)
                 this._rows.add_child(new St.Label({text: 'No tasks', style_class: 'hud-context'}));
@@ -145,7 +152,7 @@ export default class LogseqHudDo extends Extension {
         const view = taskPresentation(task, this._settings.get_strv('task-text-filters'),
             this._settings.get_value('task-block-filters').deep_unpack());
         const button = new St.Button({style_class: 'hud-task', x_expand: true, can_focus: true,
-            accessible_name: [view.content, view.doing ? 'DOING' : '', view.priority?.[0] ?? '', view.context].filter(Boolean).join(', ')});
+            accessible_name: [view.content, view.doing ? 'Doing' : '', view.priority?.[0] ?? '', view.context].filter(Boolean).join(', ')});
         const row = this._verticalBox();
         const label = new St.Label({text: view.content, x_expand: true});
         label.clutter_text.line_wrap = true;
@@ -153,10 +160,10 @@ export default class LogseqHudDo extends Extension {
         row.add_child(label);
         if (view.doing || view.priority) {
             const badges = new St.BoxLayout({style_class: 'hud-badges'});
-            if (view.doing)
-                badges.add_child(new St.Label({text: '◴ DOING', style_class: 'hud-badge hud-doing'}));
             if (view.priority)
                 badges.add_child(new St.Label({text: view.priority[0], style_class: `hud-badge hud-${view.priority[1]}`}));
+            if (view.doing)
+                badges.add_child(new St.Label({text: 'Doing', style_class: 'hud-badge hud-doing'}));
             row.add_child(badges);
         }
         row.add_child(new St.Label({text: view.context, style_class: 'hud-context', opacity: 170}));
@@ -182,10 +189,50 @@ export default class LogseqHudDo extends Extension {
                 this._showMessage(`Unable to open Logseq: ${error.message}`);
             }
         });
-        this._rows.add_child(button);
+        const container = new St.BoxLayout({x_expand: true, reactive: true, track_hover: true});
+        const hide = new St.Button({can_focus: true, accessible_name: 'Hide task',
+            child: new St.Icon({icon_name: 'view-conceal-symbolic', icon_size: 16}), opacity: 0});
+        const update = () => { hide.opacity = container.hover || hide.has_key_focus() || button.has_key_focus() ? 255 : 0; };
+        container.connect('notify::hover', update);
+        for (const actor of [button, hide]) {
+            actor.connect('key-focus-in', update);
+            actor.connect('key-focus-out', update);
+        }
+        hide.connect('clicked', () => this._confirmHide(task));
+        container.add_child(button);
+        container.add_child(hide);
+        this._rows.add_child(container);
+    }
+
+    _confirmHide(task) {
+        if (this._dialog)
+            return;
+        const dialog = new ModalDialog.ModalDialog();
+        this._dialog = dialog;
+        const content = new Dialog.MessageDialogContent({
+            title: 'Hide Task?', description: task.content,
+        });
+        dialog.contentLayout.add_child(content);
+        dialog.setButtons([
+            {label: 'Cancel', default: true, key: Clutter.KEY_Escape, action: () => dialog.close()},
+            {label: 'Hide Task', action: () => {
+                try {
+                    hideTask(this._settings, task);
+                    dialog.close();
+                    this._render();
+                } catch (error) {
+                    content.description = error.message;
+                    this._showMessage(error.message);
+                }
+            }},
+        ]);
+        dialog.connect('closed', () => { this._dialog = null; });
+        dialog.open();
     }
 
     disable() {
+        this._dialog?.destroy();
+        this._dialog = null;
         this._controller.close();
         this._removeTimers();
         this._settings.disconnect(this._settingsSignal);

@@ -191,3 +191,17 @@ logseq-hud-do@local`. After an update restart the session to reload modules.
 To uninstall, disable the extension and remove
 `${XDG_DATA_HOME:-~/.local/share}/gnome-shell/extensions/logseq-hud-do@local`.
 The cache is shared with the CLI and can be removed separately.
+
+### Hidden tasks
+
+Hover over a task or focus it with the keyboard to reveal Hide. The Shell
+confirmation defaults to Cancel; Escape cancels. Hiding changes only extension
+settings, never Markdown. Preferences → Hidden Tasks supports search, Unhide,
+and confirmed Unhide All, synchronized with the running extension.
+
+Hidden tasks persist in a version 2 GSettings registry. Identity uses the
+canonical graph directory, resolved originating page title (including journal
+titles), normalized task text and scheduled date. Tasks share hidden status when graph, page, normalized content and scheduled
+date all match. Different scheduled dates or graphs produce separate hidden identities. TODO/DOING and priority changes preserve it; text,
+page, graph directory or scheduled-date changes can reveal a task. Display
+filters do not affect identity. Old experimental UUID records are not migrated.

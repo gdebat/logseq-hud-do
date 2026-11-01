@@ -266,6 +266,7 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
                 records = [dict(record) for record in records]
                 block_states = [r.pop('block_reference_status', 'missing') for r in records]
                 for record in records:
+                    record['graph_path'] = graph_id
                     record['graph'] = name or graph.name
                     target = record['block_uuid'] or record['source_page']
                     record['deep_link'] = 'logseq://graph/' + quote(graph.name, safe='') + '?' + urlencode({'block-id' if record['block_uuid'] else 'page': target})

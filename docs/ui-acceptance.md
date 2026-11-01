@@ -33,7 +33,7 @@ On GNOME 46–50 with light and dark Shell themes:
 2. Hover headings, empty sections, list padding and scrollbar: no list-wide
    highlight. Hover/focus a task: only that row highlights. Scroll and click tasks;
    verify the same Logseq destinations and successful menu dismissal.
-3. Verify green DOING and High/Medium/Low badges and hidden priority markers.
+3. Verify High/Medium/Low priority badges followed by a green `Doing` badge for `DOING` tasks and hidden priority markers.
 4. Using existing tasks, verify relay property lines disappear but surrounding
    multiline text remains. Add, edit and remove filters, try malformed syntax,
    clear the list, and reopen Preferences to verify persistence.
