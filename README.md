@@ -2,8 +2,8 @@
 
 ![Logo](./docs/images/logo.png)
 
-What does HUD->Do mean?
-It stands for Heads-Up Display, Now Do It. This extension brings your Logseq tasks out of the abyss of your daily Logseq journals and puts them right in your face until they actually get done. 
+**What does HUD->Do mean?**
+It stands for Heads-Up Display, Now Do It. This extension brings your Logseq tasks out of the abyss of your daily Logseq journals and puts them right in your face until they actually get done.
 
 A native GNOME Shell 46–50 indicator with an offline, read-only Python backend for Logseq OG Markdown graphs.
 The backend requires Python 3.10+ on Linux with no third-party Python dependencies.
