@@ -154,3 +154,18 @@ for (const raw of ['{', 'null', '{}', '[]', '{"version":99,"tasks":[]}', '{"vers
     assert.equal(settings.registry, raw);
     assert.match(mixed.description, /No changes were saved/);
 }
+
+const successfulWrite = settings.set_string;
+writeHidden(settings, records);
+hidden.children[0].text = '';
+hidden.children[0].handlers['search-changed']();
+const previousRegistry = settings.registry;
+settings.set_string = () => false;
+hidden.children[2].children[0].handlers.clicked();
+assert.match(hidden.description, /could not be saved/i);
+assert.equal(settings.registry, previousRegistry);
+assert.equal(hidden.children[2].title, 'First task');
+settings.set_string = successfulWrite;
+hidden.children[2].children[0].handlers.clicked();
+assert.equal(readHidden(settings).length, 1);
+assert.equal(hidden.description, '');

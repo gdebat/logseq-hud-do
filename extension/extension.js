@@ -209,9 +209,10 @@ export default class LogseqHudDo extends Extension {
             return;
         const dialog = new ModalDialog.ModalDialog();
         this._dialog = dialog;
-        dialog.contentLayout.add_child(new Dialog.MessageDialogContent({
+        const content = new Dialog.MessageDialogContent({
             title: 'Hide Task?', description: task.content,
-        }));
+        });
+        dialog.contentLayout.add_child(content);
         dialog.setButtons([
             {label: 'Cancel', default: true, key: Clutter.KEY_Escape, action: () => dialog.close()},
             {label: 'Hide Task', action: () => {
@@ -220,7 +221,7 @@ export default class LogseqHudDo extends Extension {
                     dialog.close();
                     this._render();
                 } catch (error) {
-                    dialog.close();
+                    content.description = error.message;
                     this._showMessage(error.message);
                 }
             }},

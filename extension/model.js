@@ -78,7 +78,7 @@ function filterBlocks(lines, blocks) {
     let opening = -1;
     let closing = null;
     for (let i = 0; i < lines.length; i++) {
-        const marker = lines[i].trim();
+        const marker = lines[i].text.trim();
         if (opening >= 0) {
             if (marker === closing) {
                 opening = -1;
@@ -101,9 +101,11 @@ export function displayContent(content, patterns = defaultTextFilters, blocks = 
     const filters = patterns.flatMap(pattern => {
         try { return [compileTextFilter(pattern)]; } catch { return []; }
     });
-    const lines = content.split(/\r?\n/);
-    lines[0] = lines[0].replace(new RegExp(`${priorityMarker.source}[ \t]*`, 'g'), '');
-    return filterBlocks(lines, blocks).filter(line => !filters.some(filter => filter.test(line)))
+    const lines = content.split(/\r?\n/).map((text, index) => ({text, index}));
+    return filterBlocks(lines, blocks)
+        .filter(({text}) => !filters.some(filter => filter.test(text)))
+        .map(({text, index}) => index === 0
+            ? text.replace(new RegExp(`${priorityMarker.source}[ \t]*`, 'g'), '') : text)
         .join('\n').trim();
 }
 
@@ -214,10 +216,17 @@ export function readHidden(settings) {
 
 function editHidden(settings, key, replacement) {
     const registry = readRegistry(settings);
-    registry.tasks = registry.tasks.filter(record => !validHiddenRecord(record) || record.key !== key);
-    if (replacement)
+    const matching = record => validHiddenRecord(record) && record.key === key;
+    if (!replacement && registry.tasks.some(record => matching(record) &&
+        Object.keys(record).some(field => !['key', 'description', 'graph', 'scheduled'].includes(field))))
+        throw new Error('This hidden task contains unknown fields. No changes were saved. Use confirmed Unhide All in Preferences to reset the registry.');
+    const exists = registry.tasks.some(matching);
+    registry.tasks = registry.tasks.flatMap(record => matching(record)
+        ? replacement ? [{...record, ...replacement}] : [] : [record]);
+    if (replacement && !exists)
         registry.tasks.push(replacement);
-    settings.set_string('hidden-tasks-v2', JSON.stringify(registry));
+    if (settings.set_string('hidden-tasks-v2', JSON.stringify(registry)) === false)
+        throw new Error('Hidden tasks could not be saved. Check that the settings are writable and try again.');
 }
 
 export function unhideTask(settings, key) {

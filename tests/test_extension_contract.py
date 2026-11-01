@@ -86,8 +86,8 @@ for (const task of tasks) {
     const note = `note [#${task.priority}]`;
     assert.equal(task.content, `[#${task.priority}] Report\\n${note}`);
     assert.equal(taskPresentation(task).content, `Report\\n${note}`);
-    assert.equal(taskPresentation(task, ['^Report']).content, note);
-    assert.equal(taskPresentation(task, [], [['Report', 'END']]).content, `Report\\n${note}`);
+    assert.equal(taskPresentation(task, ['^\\\\[#' + task.priority + '\\\\]']).content, note);
+    assert.equal(taskPresentation(task, [], [[task.content.split('\\n')[0], 'END']]).content, `Report\\n${note}`);
     assert.deepEqual(taskPresentation(task).priority, priorities[task.priority]);
     assert.equal(taskPresentation(task).doing, true);
     assert.equal(logicalIdentity(task), logicalIdentity({...task, content: `Report\\n${note}`}));

@@ -326,3 +326,27 @@ mixedHud.enable();
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(mixedHud._count.text, '0');
 mixedHud.disable();
+
+registry = '{"version":2,"tasks":[]}';
+const rejectedHud = new context.Hud();
+rejectedHud._runBackend = hiding._runBackend;
+rejectedHud.enable();
+await new Promise(resolve => setImmediate(resolve));
+rejectedHud._confirmHide(task);
+const pendingDialog = rejectedHud._dialog;
+const workingWrite = settings.set_string;
+settings.set_string = () => false;
+pendingDialog.buttons[1].action();
+assert.equal(rejectedHud._dialog, pendingDialog);
+assert.equal(rejectedHud._count.text, '2');
+assert.match(pendingDialog.contentLayout.children[0].description, /could not be saved/i);
+settings.set_string = workingWrite;
+// The registry can change while confirmation is pending.
+hideTask(settings, task);
+const updated = JSON.parse(registry);
+updated.tasks[0].future = {keep: true};
+registry = JSON.stringify(updated);
+pendingDialog.buttons[1].action();
+assert.equal(JSON.parse(registry).tasks[0].future.keep, true);
+assert.equal(rejectedHud._dialog, null);
+rejectedHud.disable();
