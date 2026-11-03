@@ -11,7 +11,8 @@ import time
 from urllib.parse import urlencode, quote, unquote
 import uuid
 
-VERSION = 4
+VERSION = 5
+TAB_WIDTH = 4
 GRAPH_ROOTS = tuple(json.loads(Path(__file__).with_name('graph-roots.json').read_text()))
 STATUSES = ('TODO', 'DOING')
 PRIORITIES = ('A', 'B', 'C')
@@ -71,7 +72,7 @@ def parse(text, graph, relative):
                 fence = None
             continue
         if match:
-            indent = len(match[1].expandtabs(4))
+            indent = len(match[1].expandtabs(TAB_WIDTH))
             while stack and stack[-1][0] >= indent:
                 stack.pop()
             task_match = TASK.match(body)
@@ -89,7 +90,7 @@ def parse(text, graph, relative):
                             block_location={'line': number}, block_uuid=None, block_reference_status='missing')
                 tasks.append(task)
             stack.append((indent, task))
-        elif stack and line.strip() and len(line) - len(line.lstrip()) <= stack[-1][0]:
+        elif stack and line.strip() and len(line[:len(line) - len(line.lstrip())].expandtabs(TAB_WIDTH)) <= stack[-1][0]:
             stack.clear()
         if fence_match:
             fence = fence_match[1]
