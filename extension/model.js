@@ -169,34 +169,13 @@ export class RefreshController {
     }
 }
 
-function identityPage(page) {
-    const match = /^(\d{4}-\d{2}-\d{2}), (Sun|Mon|Tue|Wed|Thu|Fri|Sat)$/.exec(page);
-    if (!match)
-        return page;
-    const day = new Date(`${match[1]}T00:00:00Z`);
-    if (!Number.isFinite(day.getTime()) || day.toISOString().slice(0, 10) !== match[1])
-        return page;
-    const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day.getUTCDay()];
-    if (page !== `${match[1]}, ${weekday}`)
-        return page;
-    const number = day.getUTCDate();
-    const suffix = number % 100 >= 11 && number % 100 <= 13 ? 'th' :
-        ({1: 'st', 2: 'nd', 3: 'rd'}[number % 10] ?? 'th');
-    const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][day.getUTCMonth()];
-    return `${month} ${number}${suffix}, ${day.getUTCFullYear()}`;
-}
-
-function identityKey(task, page) {
+export function logicalIdentity(task) {
     if (typeof task.graph_path !== 'string' || !task.graph_path.startsWith('/'))
         throw new Error('Missing stable graph identity.');
     const text = task.content.split(/\r?\n/)
         .map((line, index) => index === 0 ? line.replace(priorityMarker, '') : line)
         .map(line => line.replace(/[ \t]+/g, ' ').trim()).join('\n').trim();
-    return JSON.stringify([task.graph_path, page, text, task.scheduled]);
-}
-
-export function logicalIdentity(task) {
-    return identityKey(task, identityPage(task.source_page));
+    return JSON.stringify([task.graph_path, task.source_page, text, task.scheduled]);
 }
 
 const hiddenRecordFields = {
@@ -271,11 +250,7 @@ export function hideTask(settings, task) {
 }
 
 export function visibleTasks(data, settings) {
-    const hidden = new Set(readHidden(settings).map(record => {
-        const key = JSON.parse(record.key);
-        key[1] = identityPage(key[1]);
-        return JSON.stringify(key);
-    }));
+    const hidden = new Set(readHidden(settings).map(record => record.key));
     return Object.fromEntries(sections.map(section => [section,
         data[section].filter(task => !hidden.has(logicalIdentity(task)))]));
 }

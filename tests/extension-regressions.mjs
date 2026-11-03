@@ -86,40 +86,27 @@ await checkFieldAgreement();
 console.log('Supported-field construction, validation and Unhide agreement passed');
 
 for (const block_uuid of [null, '12345678-1234-1234-1234-123456789abc']) {
-    const journal = {...task, journal_date: '2026-11-03', source_page: 'Nov 3rd, 2026', block_uuid};
-    const custom = {...journal, source_page: '2026-11-03, Tue'};
-    for (const hidden of [journal, custom]) {
-        raw = JSON.stringify({version: 2, tasks: []});
-        hideTask(settings, hidden);
-        for (const shown of [journal, custom, journal, custom])
-            assert.equal(visibleTasks({...data, today: [shown]}, settings).today.length, 0);
-        assert.equal(readHidden(settings)[0].key, logicalIdentity(journal));
-    }
-}
-
-for (const block_uuid of [null, '12345678-1234-1234-1234-123456789abc']) {
-    const journal = {...task, journal_date: '2026-11-03', source_page: '2026-11-03, Tue', block_uuid};
-    const ordinary = {...journal, journal_date: null};
-    const legacy = {...journal, source_page: 'Nov 3rd, 2026'};
-    const candidates = [journal, ordinary, legacy];
+    const candidates = [null, '2026-11-03'].flatMap(journal_date =>
+        ['2026-11-03, Tue', 'Nov 3rd, 2026'].map(source_page =>
+            ({...task, journal_date, source_page, block_uuid})));
     const grouped = {today: candidates, overdue: candidates, upcoming: candidates};
     for (const hidden of candidates) {
-        raw = JSON.stringify({version: 2, tasks: []});
-        hideTask(settings, hidden);
-        assert(Object.values(visibleTasks(grouped, settings)).every(tasks => tasks.length === 0));
-        const distinct = [
-            {...journal, graph_path: '/other'}, {...journal, content: 'Other'},
-            {...journal, scheduled: '2026-11-04'}, {...journal, source_page: '2026-11-03, Mon'},
-            {...journal, source_page: '2026-02-30, Mon'}, {...journal, source_page: '9999-99-99, Sun'},
-        ];
-        assert.deepEqual(visibleTasks({...data, today: distinct}, settings).today, distinct);
-        unhideTask(settings, readHidden(settings)[0].key);
-        assert.deepEqual(visibleTasks(grouped, settings), grouped);
+        const expected = Object.fromEntries(Object.entries(grouped).map(([section, tasks]) =>
+            [section, tasks.filter(candidate => candidate.source_page !== hidden.source_page)]));
         const oldKey = JSON.stringify([hidden.graph_path, hidden.source_page, hidden.content, hidden.scheduled]);
-        raw = JSON.stringify({version: 2, tasks: [{key: oldKey, description: hidden.content,
-            graph: hidden.graph, scheduled: hidden.scheduled}]});
-        assert(Object.values(visibleTasks(grouped, settings)).every(tasks => tasks.length === 0));
-        unhideTask(settings, oldKey);
-        assert.deepEqual(visibleTasks(grouped, settings), grouped);
+        for (const existing of [false, true]) {
+            raw = JSON.stringify({version: 2, tasks: existing ? [{key: oldKey,
+                description: hidden.content, graph: hidden.graph, scheduled: hidden.scheduled}] : []});
+            if (!existing) hideTask(settings, hidden);
+            assert.equal(readHidden(settings)[0].key, oldKey);
+            assert.deepEqual(visibleTasks(grouped, settings), expected);
+            const distinct = [
+                {...hidden, graph_path: '/other'}, {...hidden, content: 'Other'},
+                {...hidden, scheduled: '2026-11-04'},
+            ];
+            assert.deepEqual(visibleTasks({...data, today: distinct}, settings).today, distinct);
+            unhideTask(settings, oldKey);
+            assert.deepEqual(visibleTasks(grouped, settings), grouped);
+        }
     }
 }

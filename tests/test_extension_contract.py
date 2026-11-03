@@ -131,7 +131,7 @@ for (const origin of outputs.slice(0, 2)) {
         assert.equal(JSON.parse(raw).tasks.length, 1);
         for (const data of outputs) {
             const visible = visibleTasks(data, settings).today;
-            const expected = data.today.filter(candidate => candidate.source_file !== task.source_file ||
+            const expected = data.today.filter(candidate => candidate.source_page !== task.source_page ||
                 candidate.content !== task.content);
             assert.deepEqual(visible, expected, task.source_file);
         }
@@ -148,7 +148,7 @@ for (const task of outputs[3].today) {
 
     def test_hidden_identity_and_badge_documentation(self):
         readme = (ROOT / 'README.md').read_text()
-        self.assertIn('graph, page identity, normalized content and scheduled', readme)
+        self.assertIn('graph, page, normalized content and scheduled', readme)
         self.assertIn('Different scheduled dates or graphs produce separate hidden identities.', readme)
         requirements = (ROOT / 'docs/requirements.md').read_text()
         self.assertIn('prominent green `Doing` badge', requirements)
