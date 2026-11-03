@@ -95,9 +95,53 @@ for (const task of tasks) {
 }
 """], input=result.stdout, text=True, check=True, cwd=ROOT)
 
+    def test_journal_hidden_identity_producer_conformance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            graph = Path(tmp) / 'graph'
+            (graph / 'journals').mkdir(parents=True)
+            (graph / 'logseq').mkdir()
+            today = dt.date(2026, 1, 1)
+            for offset in range(365):
+                day = today + dt.timedelta(days=offset)
+                (graph / 'journals' / (day.strftime('%Y_%m_%d') + '.md')).write_text(
+                    f'- TODO Task\n  SCHEDULED: <{today}>\n'
+                    f'- TODO Block\n  id:: 12345678-1234-1234-1234-{offset:012x}\n  SCHEDULED: <{today}>')
+            outputs = []
+            for setting in ('{}', '{:journal/page-title-format "yyyy-MM-dd, EEE"}', '{}'):
+                (graph / 'logseq/config.edn').write_text(setting)
+                data, _ = scan([(graph, 'Graph')], Path(tmp) / 'cache', today=today)
+                outputs.append(data)
+            for task in outputs[1]['today']:
+                if task['block_uuid'] is None:
+                    source = graph / task['source_file']
+                    source.write_text(f"title:: {task['source_page']}\n" + source.read_text())
+            data, _ = scan([(graph, 'Graph')], Path(tmp) / 'cache', today=today)
+            outputs.append(data)
+            subprocess.run(['node', '--input-type=module', '-e', """
+import {hideTask, visibleTasks, logicalIdentity} from './extension/model.js';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const outputs = JSON.parse(fs.readFileSync(0, 'utf8'));
+assert.equal(outputs[0].today.length, 730);
+for (const origin of outputs.slice(0, 2)) {
+    let raw = '{"version":2,"tasks":[]}';
+    const settings = {get_string: () => raw, set_string: (_, value) => raw = value};
+    for (const task of origin.today) hideTask(settings, task);
+    assert.equal(JSON.parse(raw).tasks.length, 730);
+    for (const data of outputs) assert.equal(visibleTasks(data, settings).today.length, 0);
+}
+for (const task of outputs[3].today) {
+    const key = logicalIdentity({...task, journal_date: null});
+    let raw = JSON.stringify({version: 2, tasks: [{key, description: task.content,
+        graph: task.graph, scheduled: task.scheduled}]});
+    const settings = {get_string: () => raw, set_string: (_, value) => raw = value};
+    assert.equal(visibleTasks({today: [task], overdue: [], upcoming: []}, settings).today.length, 0);
+}
+"""], input=json.dumps(outputs), text=True, check=True, cwd=ROOT)
+
     def test_hidden_identity_and_badge_documentation(self):
         readme = (ROOT / 'README.md').read_text()
-        self.assertIn('graph, page, normalized content and scheduled', readme)
+        self.assertIn('graph, page identity, normalized content and scheduled', readme)
         self.assertIn('Different scheduled dates or graphs produce separate hidden identities.', readme)
         requirements = (ROOT / 'docs/requirements.md').read_text()
         self.assertIn('prominent green `Doing` badge', requirements)

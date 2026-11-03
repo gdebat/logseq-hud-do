@@ -183,13 +183,17 @@ function identityPage(task) {
     return `${month} ${number}${suffix}, ${day.getUTCFullYear()}`;
 }
 
-export function logicalIdentity(task) {
+function identityKey(task, page) {
     if (typeof task.graph_path !== 'string' || !task.graph_path.startsWith('/'))
         throw new Error('Missing stable graph identity.');
     const text = task.content.split(/\r?\n/)
         .map((line, index) => index === 0 ? line.replace(priorityMarker, '') : line)
         .map(line => line.replace(/[ \t]+/g, ' ').trim()).join('\n').trim();
-    return JSON.stringify([task.graph_path, identityPage(task), text, task.scheduled]);
+    return JSON.stringify([task.graph_path, page, text, task.scheduled]);
+}
+
+export function logicalIdentity(task) {
+    return identityKey(task, identityPage(task));
 }
 
 const hiddenRecordFields = {
@@ -266,5 +270,6 @@ export function hideTask(settings, task) {
 export function visibleTasks(data, settings) {
     const hidden = new Set(readHidden(settings).map(record => record.key));
     return Object.fromEntries(sections.map(section => [section,
-        data[section].filter(task => !hidden.has(logicalIdentity(task)))]));
+        data[section].filter(task => !hidden.has(logicalIdentity(task)) &&
+            !hidden.has(identityKey(task, task.source_page)))]));
 }

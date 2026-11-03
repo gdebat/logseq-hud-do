@@ -205,9 +205,12 @@ settings, never Markdown. Preferences → Hidden Tasks supports search, Unhide,
 and confirmed Unhide All, synchronized with the running extension.
 
 Hidden tasks persist in a version 2 GSettings registry. Identity uses the
-canonical graph directory, resolved originating page title (including journal
-titles, with the supported custom journal title normalized to its legacy default
-title for hidden-task compatibility), normalized task text and scheduled date. Tasks share hidden status when graph, page, normalized content and scheduled
-date all match. Different scheduled dates or graphs produce separate hidden identities. TODO/DOING and priority changes preserve it; text,
+canonical graph directory, page identity, normalized task text and scheduled date.
+For dated journal records only, a title matching the supported custom format is
+normalized to its legacy default title. Ordinary pages keep their resolved title.
+Tasks share hidden status when graph, page identity, normalized content and scheduled
+date all match. Existing registry keys containing the resolved title also remain
+effective, including explicit journal titles that match the custom format.
+Different scheduled dates or graphs produce separate hidden identities. TODO/DOING and priority changes preserve it; text,
 page, graph directory or scheduled-date changes can reveal a task. Display
 filters do not affect identity. Old experimental UUID records are not migrated.
