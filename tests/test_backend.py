@@ -41,6 +41,61 @@ class BackendTests(unittest.TestCase):
         self.assertIsNone(tasks[2]['scheduled'])
         self.assertEqual([t['priority'] for t in tasks], ['A', 'C', None])
 
+    def test_tab_nested_scheduled_scans(self):
+        fixtures = {
+            "journals/2026_11_02.md": "- Parent block on yesterday's journal\n\t- TODO Task under the parent block on yesterday's journal\n\t  SCHEDULED: <2026-11-03 Tue>",
+            "journals/2026_11_03.md": "- Parent block on today's journal\n\t- TODO Task under the parent block in today's journal\n\t  SCHEDULED: <2026-11-03 Tue>",
+            "pages/Test Page.md": "- Parent block on a test page\n\t- TODO Task under the parent block on a test page\n\t  SCHEDULED: <2026-11-03 Tue>",
+        }
+        for status in ('TODO', 'DOING'):
+            for relative, text in fixtures.items():
+                self.write(relative, text.replace('TODO', status))
+            for mode, options, parsed in [('cold', {}, 3), ('warm', {}, 0),
+                                          ('full', {'full_rescan': True}, 3)]:
+                with self.subTest(status=status, mode=mode):
+                    result, stats = scan([(self.graph, 'Work')], self.cache,
+                                         today=dt.date(2026, 11, 3), **options)
+                    self.assertEqual(stats['parsed'], parsed)
+                    self.assertEqual(stats['reused'], 3 - parsed)
+                    self.assertEqual({t['source_file'] for t in result['today']}, set(fixtures))
+                    self.assertEqual([(t['status'], t['scheduled']) for t in result['today']],
+                                     [(status, '2026-11-03')] * 3)
+                    self.assertEqual(result['overdue'], [])
+                    self.assertEqual(result['upcoming'], [])
+
+    def test_tab_metadata_ownership(self):
+        identifier = '12345678-1234-1234-1234-123456789abc'
+        text = ('- TODO parent\n\t- TODO child\n\t  SCHEDULED: <2026-10-31>\n'
+                '\t  DEADLINE: <2026-11-02>\n'
+                f'\t  id:: {identifier}\n\t  instructions\n\t  \n\t  more\n'
+                '    - DOING sibling\n      DEADLINE: <2026-11-03>\n'
+                '\t\t- note\n\t\t  SCHEDULED: <2026-11-04>\n'
+                '- TODO final\n  - note\n    SCHEDULED: <2026-11-05>\n'
+                '\t- TODO expired\n    SCHEDULED: <2026-11-06>\n'
+                '\t  DEADLINE: <2026-11-07>\n\t  ignored\n')
+        tasks = parse(text, 'g', 'pages/a.md')
+        parent, child, sibling, final, expired = tasks
+        self.assertEqual(child['scheduled'], '2026-10-31')
+        self.assertEqual(child['deadline'], '2026-11-02')
+        self.assertEqual(child['block_uuid'], identifier)
+        self.assertEqual(child['content'], 'child\ninstructions\n\nmore')
+        self.assertEqual(sibling['deadline'], '2026-11-03')
+        for task in (parent, sibling, final, expired):
+            self.assertIsNone(task['scheduled'])
+            self.assertIsNone(task['block_uuid'])
+        for task in (parent, final, expired):
+            self.assertIsNone(task['deadline'])
+        self.assertEqual(expired['content'], 'expired')
+
+    def test_tab_unscheduled_exclusions(self):
+        for relative in ('journals/2026_10_30.md', 'journals/2026_10_31.md', 'pages/a.md'):
+            self.write(relative, '- Parent\n\t- TODO unscheduled')
+        for _ in range(2):
+            result, _ = self.scan()
+            self.assertEqual([t['source_file'] for t in result['today']], ['journals/2026_10_31.md'])
+            self.assertEqual(result['overdue'], [])
+            self.assertEqual(result['upcoming'], [])
+
     def test_stable_fallback(self):
         one = parse('- TODO same\n- TODO same', 'g', 'pages/a.md')
         two = parse('- note\n- TODO same\n- TODO same', 'g', 'pages/a.md')
@@ -220,15 +275,15 @@ class BackendTests(unittest.TestCase):
         self.assertIsNone(tasks[0]['deadline'])
 
     def test_previous_parser_cache_upgrade(self):
-        for version in (1, 2):
+        for version in (1, 2, 4):
             with self.subTest(version=version):
                 relative = 'journals/2026_10_31.md'
-                self.write(relative, '- TODO original\n  full instructions\n  SCHEDULED: <2026-10-31> DEADLINE: <2026-11-02>')
+                self.write(relative, '- Parent\n\t- TODO original\n\t  full instructions\n\t  SCHEDULED: <2026-10-31> DEADLINE: <2026-11-02>')
                 metadata = (self.graph / relative).stat()
                 old = dict(id='old-parser-id', content='original', status='TODO', priority=None,
                            scheduled=None, deadline=None, graph=str(self.graph), source_file=relative,
                            source_page='2026_10_31', journal_date='2026-10-31',
-                           block_location={'line': 1}, block_uuid=None)
+                           block_location={'line': 2}, block_uuid=None, block_reference_status='missing')
                 with sqlite3.connect(self.cache) as db:
                     db.execute('CREATE TABLE IF NOT EXISTS files (graph TEXT, path TEXT, mtime INTEGER, size INTEGER, tasks TEXT, PRIMARY KEY(graph,path))')
                     db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?)', (str(self.graph), relative, metadata.st_mtime_ns, metadata.st_size, json.dumps([old])))
