@@ -100,8 +100,8 @@ for (const task of tasks) {
             graph = Path(tmp) / 'graph'
             (graph / 'journals').mkdir(parents=True)
             (graph / 'logseq').mkdir()
-            today = dt.date(2026, 1, 1)
-            for offset in range(365):
+            today = dt.date(2028, 1, 1)
+            for offset in range(366):
                 day = today + dt.timedelta(days=offset)
                 (graph / 'journals' / (day.strftime('%Y_%m_%d') + '.md')).write_text(
                     f'- TODO Task\n  SCHEDULED: <{today}>\n'
@@ -118,20 +118,27 @@ for (const task of tasks) {
             data, _ = scan([(graph, 'Graph')], Path(tmp) / 'cache', today=today)
             outputs.append(data)
             subprocess.run(['node', '--input-type=module', '-e', """
-import {hideTask, visibleTasks, logicalIdentity} from './extension/model.js';
+import {hideTask, visibleTasks} from './extension/model.js';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 const outputs = JSON.parse(fs.readFileSync(0, 'utf8'));
-assert.equal(outputs[0].today.length, 730);
+assert.equal(outputs[0].today.length, 732);
 for (const origin of outputs.slice(0, 2)) {
-    let raw = '{"version":2,"tasks":[]}';
-    const settings = {get_string: () => raw, set_string: (_, value) => raw = value};
-    for (const task of origin.today) hideTask(settings, task);
-    assert.equal(JSON.parse(raw).tasks.length, 730);
-    for (const data of outputs) assert.equal(visibleTasks(data, settings).today.length, 0);
+    for (const task of origin.today) {
+        let raw = '{"version":2,"tasks":[]}';
+        const settings = {get_string: () => raw, set_string: (_, value) => raw = value};
+        hideTask(settings, task);
+        assert.equal(JSON.parse(raw).tasks.length, 1);
+        for (const data of outputs) {
+            const visible = visibleTasks(data, settings).today;
+            const expected = data.today.filter(candidate => candidate.source_file !== task.source_file ||
+                candidate.content !== task.content);
+            assert.deepEqual(visible, expected, task.source_file);
+        }
+    }
 }
 for (const task of outputs[3].today) {
-    const key = logicalIdentity({...task, journal_date: null});
+    const key = JSON.stringify([task.graph_path, task.source_page, task.content, task.scheduled]);
     let raw = JSON.stringify({version: 2, tasks: [{key, description: task.content,
         graph: task.graph, scheduled: task.scheduled}]});
     const settings = {get_string: () => raw, set_string: (_, value) => raw = value};
