@@ -63,6 +63,13 @@ class BackendTests(unittest.TestCase):
                     self.assertEqual(result['overdue'], [])
                     self.assertEqual(result['upcoming'], [])
 
+    def test_tab_single_space_metadata(self):
+        for status in ('TODO', 'DOING'):
+            with self.subTest(status=status):
+                tasks = parse(f'- parent\n\t- {status} child\n\t SCHEDULED: <2026-11-03>\n',
+                              'g', 'pages/a.md')
+                self.assertEqual(tasks[0]['scheduled'], '2026-11-03')
+
     def test_tab_metadata_ownership(self):
         identifier = '12345678-1234-1234-1234-123456789abc'
         text = ('- TODO parent\n\t- TODO child\n\t  SCHEDULED: <2026-10-31>\n'
