@@ -25,7 +25,9 @@ extension model, checks vocabulary agreement, and drives preferences validation
 with the backend's roots and no-follow semantics.
 
 `source_page` is the resolved Logseq title, including default ordinal journal
-names, explicit `title::`, and decoded namespace filenames. `deep_link` prefers
+names, the supported graph-configured `yyyy-MM-dd, EEE` journal title, explicit
+`title::`, and decoded namespace filenames. Journal fallback titles are resolved
+from current configuration even when extraction records are cached. `deep_link` prefers
 a stored block UUID; otherwise it targets that title. Display aliases never
 select the graph. Optional CLI diagnostics include per-task navigation resolution
 without changing task fields. See [manual acceptance](navigation-acceptance.md).

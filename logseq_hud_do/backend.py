@@ -8,10 +8,12 @@ from pathlib import Path
 import re
 import sqlite3
 import time
-from urllib.parse import urlencode, quote, unquote
+from urllib.parse import urlencode, quote, quote_plus, unquote
 import uuid
 
-VERSION = 5
+from .journal_config import CUSTOM_FORMAT, journal_format
+
+VERSION = 6
 TAB_WIDTH = 4
 GRAPH_ROOTS = tuple(json.loads(Path(__file__).with_name('graph-roots.json').read_text()))
 STATUSES = ('TODO', 'DOING')
@@ -43,13 +45,20 @@ def journal_date(path):
     return None
 
 
-def page_name(text, relative):
+def explicit_page_title(text):
     for line in text.splitlines():
         if BLOCK.match(line):
             break
         title = re.match(r'^title::\s*(.+?)\s*$', line)
         if title:
             return title[1]
+    return None
+
+
+def page_name(text, relative):
+    title = explicit_page_title(text)
+    if title:
+        return title
     date = journal_date(relative)
     if date:
         day = dt.date.fromisoformat(date)
@@ -62,6 +71,7 @@ def page_name(text, relative):
 def parse(text, graph, relative):
     tasks, stack, occurrences = [], [], {}
     source_page = page_name(text, relative)
+    journal_fallback = bool(journal_date(relative) and not explicit_page_title(text))
     fence = None
     for number, line in enumerate(text.splitlines(), 1):
         match = BLOCK.match(line)
@@ -86,7 +96,7 @@ def parse(text, graph, relative):
                 task = dict(id=hashlib.sha256(identity.encode()).hexdigest(), content=content,
                             status=status, priority=priority[1] if priority else None,
                             scheduled=None, deadline=None, graph=graph, source_file=relative,
-                            source_page=source_page, journal_date=journal_date(relative),
+                            source_page=source_page, _journal_fallback=journal_fallback, journal_date=journal_date(relative),
                             block_location={'line': number}, block_uuid=None, block_reference_status='missing')
                 tasks.append(task)
             stack.append((indent, task))
@@ -180,6 +190,8 @@ def cached_records(payload, graph, relative):
                 if key not in record or (record[key] is not None and
                         (not isinstance(record[key], str) or not date_value(record[key]))):
                     return None
+            if type(record.get('_journal_fallback')) is not bool:
+                return None
             location = record.get('block_location')
             if not isinstance(location, dict) or type(location.get('line')) is not int or location['line'] < 1:
                 return None
@@ -240,6 +252,11 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
     try:
         for graph, name in resolved:
             graph_id = str(graph)
+            try:
+                with os.fdopen(open_source(graph, 'logseq/config.edn'), encoding='utf-8') as config:
+                    custom_journal = journal_format(config.read()) == CUSTOM_FORMAT
+            except (OSError, UnicodeError):
+                custom_journal = False
             current = discover(graph)
             cached = {row[0]: row[1:] for row in connection.execute('SELECT path,mtime,size,tasks FROM files WHERE graph=?', (graph_id,))}
             stats['discovered'] += len(current)
@@ -267,10 +284,15 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
                 records = [dict(record) for record in records]
                 block_states = [r.pop('block_reference_status', 'missing') for r in records]
                 for record in records:
+                    custom_title = record.pop('_journal_fallback') and custom_journal
+                    if custom_title:
+                        day = dt.date.fromisoformat(record['journal_date'])
+                        weekday = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')[day.weekday()]
+                        record['source_page'] = f'{day.isoformat()}, {weekday}'
                     record['graph_path'] = graph_id
                     record['graph'] = name or graph.name
                     target = record['block_uuid'] or record['source_page']
-                    record['deep_link'] = 'logseq://graph/' + quote(graph.name, safe='') + '?' + urlencode({'block-id' if record['block_uuid'] else 'page': target})
+                    record['deep_link'] = 'logseq://graph/' + quote(graph.name, safe='') + '?' + urlencode({'block-id' if record['block_uuid'] else 'page': target}, quote_via=quote if custom_title else quote_plus)
                 navigation.extend(dict(graph_path=graph_id, graph_identifier=graph.name,
                                        source_file=relative, page=r['source_page'],
                                        block_uuid=r['block_uuid'], block_reference_status=state,

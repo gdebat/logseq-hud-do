@@ -4,8 +4,12 @@ The previous correction used source filename stems as page names. This fails
 for journals (`2026_10_31` versus `Oct 31st, 2026`), namespace filenames and
 escaped filenames. The backend now resolves titles before building the URI;
 explicit page `title::` wins, otherwise default OG journal titles and decoded
-triple-underscore namespace filenames are used. Custom journal title formats
-remain unsupported; validate those against a copied Logseq link before use.
+triple-underscore namespace filenames are used. The exact graph setting
+`:journal/page-title-format "yyyy-MM-dd, EEE"` in `logseq/config.edn` is also
+supported, with fixed English weekdays. Other custom formats retain the default
+fallback and remain unsupported; validate against a copied Logseq link before use.
+Missing, unreadable, malformed or symlinked config uses the default fallback.
+Configuration changes apply on warm scans without rewriting extraction records.
 UUIDs come only from task-owned `id::` properties, never task hash identifiers.
 A syntactically valid stored UUID cannot prove the block exists in Logseq's index.
 
@@ -32,6 +36,10 @@ with Logseq's own copied URL, especially after renaming or symlinking a graph.
    `python3 -m logseq_hud_do --graph /disposable/graph --cache /tmp/hud-test.sqlite --diagnostics`.
    Diagnostics on stderr list canonical graph path, identifier, source file,
    resolved page, block reference status (valid/invalid/missing), target and URI.
+   Repeat with `:journal/page-title-format "yyyy-MM-dd, EEE"`: an untitled
+   `journals/2026_11_03.md` must target `page=2026-11-03%2C%20Tue`. Compare
+   the copied URL, direct URI activation and HUD row. Change back to the default
+   setting and repeat without editing the journal, to exercise warm-cache output.
 3. Use Logseq's Copy block URL action to obtain a genuine persisted block UUID.
    Confirm its `id::` in the disposable Markdown and compare the backend URI
    with the copied URL. Click that row: verify the exact block, not just graph.

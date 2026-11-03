@@ -96,8 +96,13 @@ linter or type checker is configured.
 
 Only OG Markdown is supported. Journal names supported are YYYY_MM_DD,
 YYYY-MM-DD, and English abbreviated/full month names such as Oct 31, 2026
-(month-name parsing follows the process locale). Arbitrary custom journal
-formats and Logseq DB graphs are unsupported. Dates without valid ISO calendar
+(month-name parsing follows the process locale). Journal page titles support the
+default English ordinal format and the exact graph setting
+`:journal/page-title-format "yyyy-MM-dd, EEE"` in `logseq/config.edn`, using English
+weekdays. Explicit pre-block `title::` takes precedence. Settings are read on
+every scan, including warm scans. Missing, unreadable, malformed or symlinked
+config and other formats retain the default fallback; arbitrary custom formats
+and Logseq DB graphs remain unsupported. Dates without valid ISO calendar
 values and invalid UTF-8 fail the refresh with source context. Deadline dates do not classify
 tasks. Markdown is never executed or rendered.
 

@@ -282,7 +282,7 @@ class BackendTests(unittest.TestCase):
         self.assertIsNone(tasks[0]['deadline'])
 
     def test_previous_parser_cache_upgrade(self):
-        for version in (1, 2, 4):
+        for version in (1, 2, 4, 5):
             with self.subTest(version=version):
                 relative = 'journals/2026_10_31.md'
                 self.write(relative, '- Parent\n\t- TODO original\n\t  full instructions\n\t  SCHEDULED: <2026-10-31> DEADLINE: <2026-11-02>')
@@ -448,6 +448,87 @@ class BackendTests(unittest.TestCase):
             self.assertIsNone(task['block_uuid'])
             self.assertEqual(task['deep_link'], 'logseq://graph/graph?page=Oct+31st%2C+2026')
             self.assertEqual(diagnostics['navigation'][0]['block_reference_status'], 'invalid')
+
+    def test_custom_journal_config_transitions(self):
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/2026_11_03.md', '- TODO fallback\n  id:: invalid\n- TODO block\n  id:: 12345678-1234-1234-1234-123456789abc')
+        self.write('journals/2026_11_04.md', 'title:: Explicit title\n- TODO explicit\n  SCHEDULED: <2026-11-03>')
+        self.write('pages/Test page.md', '- TODO ordinary\n  SCHEDULED: <2026-11-03>')
+        for setting, title, encoded in [
+                (None, 'Nov 3rd, 2026', 'Nov+3rd%2C+2026'),
+                ('yyyy-MM-dd, EEE', '2026-11-03, Tue', '2026-11-03%2C%20Tue'),
+                (None, 'Nov 3rd, 2026', 'Nov+3rd%2C+2026'),
+                ('yyyy-MM-dd, EEE', '2026-11-03, Tue', '2026-11-03%2C%20Tue'),
+                ('yyyy', 'Nov 3rd, 2026', 'Nov+3rd%2C+2026')]:
+            self.write('logseq/config.edn', '{}' if setting is None else
+                       '{:journal/page-title-format ' + json.dumps(setting) + '}')
+            for repeat in range(2):
+                before = self.cache.read_bytes() if self.cache.exists() else None
+                result, stats = scan([(self.graph, 'Work')], self.cache, today=dt.date(2026, 11, 3))
+                if before is not None:
+                    self.assertEqual(stats['parsed'], 0)
+                    self.assertEqual(self.cache.read_bytes(), before)
+                by_content = {task['content']: task for task in result['today']}
+                self.assertEqual(by_content['fallback']['source_page'], title)
+                self.assertEqual(by_content['fallback']['deep_link'], 'logseq://graph/graph?page=' + encoded)
+                self.assertEqual(by_content['block']['deep_link'], 'logseq://graph/graph?block-id=12345678-1234-1234-1234-123456789abc')
+                self.assertEqual(by_content['ordinary']['deep_link'], 'logseq://graph/graph?page=Test+page')
+                self.assertEqual(by_content['explicit']['deep_link'], 'logseq://graph/graph?page=Explicit+title')
+                for task in result['today']:
+                    self.assertNotIn('_journal_fallback', task)
+                self.assertEqual(stats['navigation'][0]['page'], title)
+                self.assertEqual(stats['navigation'][0]['deep_link'], by_content['fallback']['deep_link'])
+
+    def test_custom_journal_weekdays_and_graph_isolation(self):
+        (self.graph / 'logseq').mkdir()
+        self.write('logseq/config.edn', '{:journal/page-title-format "yyyy-MM-dd, EEE"}')
+        other = self.root / 'other'
+        (other / 'journals').mkdir(parents=True)
+        for offset, weekday in enumerate(('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')):
+            date = dt.date(2026, 11, 2) + dt.timedelta(days=offset)
+            relative = 'journals/' + date.strftime('%Y_%m_%d') + '.md'
+            self.write(relative, '- TODO task')
+            (other / relative).write_text('- TODO other')
+            for _ in range(2):
+                result, _ = scan([(self.graph, None), (other, None)], self.cache, today=date)
+                tasks = {t['content']: t for t in result['today']}
+                self.assertEqual(tasks['task']['source_page'], f'{date.isoformat()}, {weekday}')
+                self.assertTrue(tasks['other']['source_page'].startswith('Nov '))
+
+    def test_journal_config_input_boundaries(self):
+        from logseq_hud_do.journal_config import journal_format
+        key = ':journal/page-title-format'
+        value = '"yyyy-MM-dd, EEE"'
+        for text in [f'{{; {key} "wrong"\n {key} {value}}}',
+                     '{:other "escaped \\" quote" ' + key + ' ' + value + '}',
+                     f'{{:nested {{{key} "wrong"}} {key} {value}}}',
+                     f'{{:set #{{:one}} :tag #inst "2026-11-03" {key} {value}}}',
+                     f'{{#_ {key} #_ "wrong" {key} {value}}}',
+                     '{' + key + ' "yyyy-MM-dd, \u0045EE"}']:
+            with self.subTest(text=text):
+                self.assertEqual(journal_format(text), 'yyyy-MM-dd, EEE')
+        for text in ['', '{}', f'{{:nested {{{key} {value}}}}}',
+                     f'{{; {key} {value}\n}}', f'{{{key} {value}',
+                     f'{{{key}}}', f'{{{key} "bad\\q"}}',
+                     f'{{{key} {value}}} trailing']:
+            with self.subTest(text=text):
+                self.assertIsNone(journal_format(text))
+        self.write('journals/2026_10_31.md', '- TODO task')
+        (self.graph / 'logseq').mkdir()
+        config = self.graph / 'logseq/config.edn'
+        outside = self.root / 'config.edn'
+        outside.write_text(f'{{{key} {value}}}')
+        config.symlink_to(outside)
+        self.assertEqual(self.scan()[0]['today'][0]['source_page'], 'Oct 31st, 2026')
+        config.unlink()
+        config.write_bytes(b'\xff')
+        self.assertEqual(self.scan()[0]['today'][0]['source_page'], 'Oct 31st, 2026')
+        config.unlink()
+        with patch('logseq_hud_do.backend.open_source', side_effect=PermissionError):
+            self.assertEqual(self.scan()[0]['today'][0]['source_page'], 'Oct 31st, 2026')
+        (self.graph / 'logseq').rmdir()
+        (self.graph / 'logseq').symlink_to(self.root, target_is_directory=True)
+        self.assertEqual(self.scan()[0]['today'][0]['source_page'], 'Oct 31st, 2026')
 
     def test_supported_roots_individually(self):
         for root in ('pages', 'journals'):
