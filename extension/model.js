@@ -169,13 +169,27 @@ export class RefreshController {
     }
 }
 
+function identityPage(task) {
+    if (!task.journal_date)
+        return task.source_page;
+    const day = new Date(`${task.journal_date}T00:00:00Z`);
+    const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day.getUTCDay()];
+    if (task.source_page !== `${task.journal_date}, ${weekday}`)
+        return task.source_page;
+    const number = day.getUTCDate();
+    const suffix = number % 100 >= 11 && number % 100 <= 13 ? 'th' :
+        ({1: 'st', 2: 'nd', 3: 'rd'}[number % 10] ?? 'th');
+    const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][day.getUTCMonth()];
+    return `${month} ${number}${suffix}, ${day.getUTCFullYear()}`;
+}
+
 export function logicalIdentity(task) {
     if (typeof task.graph_path !== 'string' || !task.graph_path.startsWith('/'))
         throw new Error('Missing stable graph identity.');
     const text = task.content.split(/\r?\n/)
         .map((line, index) => index === 0 ? line.replace(priorityMarker, '') : line)
         .map(line => line.replace(/[ \t]+/g, ' ').trim()).join('\n').trim();
-    return JSON.stringify([task.graph_path, task.source_page, text, task.scheduled]);
+    return JSON.stringify([task.graph_path, identityPage(task), text, task.scheduled]);
 }
 
 const hiddenRecordFields = {

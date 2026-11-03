@@ -84,3 +84,15 @@ async function checkFieldAgreement() {
 }
 await checkFieldAgreement();
 console.log('Supported-field construction, validation and Unhide agreement passed');
+
+for (const block_uuid of [null, '12345678-1234-1234-1234-123456789abc']) {
+    const journal = {...task, journal_date: '2026-11-03', source_page: 'Nov 3rd, 2026', block_uuid};
+    const custom = {...journal, source_page: '2026-11-03, Tue'};
+    for (const hidden of [journal, custom]) {
+        raw = JSON.stringify({version: 2, tasks: []});
+        hideTask(settings, hidden);
+        for (const shown of [journal, custom, journal, custom])
+            assert.equal(visibleTasks({...data, today: [shown]}, settings).today.length, 0);
+        assert.equal(readHidden(settings)[0].key, logicalIdentity(journal));
+    }
+}

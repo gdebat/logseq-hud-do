@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import stat
 import time
 from urllib.parse import urlencode, quote, quote_plus, unquote
 import uuid
@@ -192,6 +193,8 @@ def cached_records(payload, graph, relative):
                     return None
             if type(record.get('_journal_fallback')) is not bool:
                 return None
+            if record['_journal_fallback'] and record['journal_date'] is None:
+                return None
             location = record.get('block_location')
             if not isinstance(location, dict) or type(location.get('line')) is not int or location['line'] < 1:
                 return None
@@ -341,6 +344,10 @@ def open_source(graph, relative):
             child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
             os.close(directory)
             directory = child
-        return os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+        descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            os.close(descriptor)
+            raise OSError(f'not a regular source file: {relative}')
+        return descriptor
     finally:
         os.close(directory)

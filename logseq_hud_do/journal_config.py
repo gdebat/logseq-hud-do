@@ -53,7 +53,7 @@ def journal_format(text):
         if char == '#' and position < len(text):
             if text[position] == '_':
                 position += 1
-                form()
+                operand()
                 return discarded
             if text[position] == '{':
                 return ('set', form(True))
@@ -66,13 +66,17 @@ def journal_format(text):
             position += 1
         token = text[start:position]
         if token.startswith('#'):
-            return ('tag', (token, form()))
+            return ('tag', (token, operand()))
         return ('atom', token)
 
+    def operand():
+        value = form()
+        while value is discarded:
+            value = form()
+        return value
+
     try:
-        root = form()
-        while root is discarded:
-            root = form()
+        root = operand()
         whitespace()
         if position != len(text) or root[0] != '{':
             return None

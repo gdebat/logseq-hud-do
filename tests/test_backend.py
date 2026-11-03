@@ -314,7 +314,7 @@ class BackendTests(unittest.TestCase):
         self.scan()
         with sqlite3.connect(self.cache) as db:
             valid = json.loads(db.execute('SELECT tasks FROM files').fetchone()[0])[0]
-        payloads = ['{', '{}', '[null]']
+        payloads = ['{', '{}', '[null]', json.dumps([dict(valid, journal_date=None)])]
         for field in valid:
             missing = dict(valid)
             del missing[field]
@@ -502,6 +502,8 @@ class BackendTests(unittest.TestCase):
         for text in [f'{{; {key} "wrong"\n {key} {value}}}',
                      '{:other "escaped \\" quote" ' + key + ' ' + value + '}',
                      f'{{:nested {{{key} "wrong"}} {key} {value}}}',
+                     f'{{#_ #_ :a :b {key} {value}}}',
+                     f'{{:tag #inst #_ :ignored "2026-11-03" {key} {value}}}',
                      f'{{:set #{{:one}} :tag #inst "2026-11-03" {key} {value}}}',
                      f'{{#_ {key} #_ "wrong" {key} {value}}}',
                      '{' + key + ' "yyyy-MM-dd, \u0045EE"}']:
@@ -529,6 +531,38 @@ class BackendTests(unittest.TestCase):
         (self.graph / 'logseq').rmdir()
         (self.graph / 'logseq').symlink_to(self.root, target_is_directory=True)
         self.assertEqual(self.scan()[0]['today'][0]['source_page'], 'Oct 31st, 2026')
+
+    def test_nonregular_sources_do_not_block(self):
+        self.write('journals/2026_10_31.md', '- TODO task')
+        (self.graph / 'logseq').mkdir()
+        config = self.graph / 'logseq/config.edn'
+        os.mkfifo(config)
+        script = "from pathlib import Path; from logseq_hud_do.backend import scan; import sys; scan([(Path(sys.argv[1]), None)], Path(sys.argv[2]))"
+        subprocess.run([sys.executable, '-c', script, str(self.graph), str(self.cache)],
+                       check=True, timeout=3)
+        from logseq_hud_do.backend import open_source
+        os.mkfifo(self.graph / 'pages/fifo.md')
+        for relative in ['logseq/config.edn', 'pages/fifo.md', 'pages']:
+            with self.subTest(relative=relative), self.assertRaises(OSError):
+                open_source(self.graph, relative)
+
+    def test_inconsistent_journal_cache_recovers_with_other_graph(self):
+        self.write('journals/2026_10_31.md', '- TODO journal')
+        (self.graph / 'logseq').mkdir()
+        (self.graph / 'logseq/config.edn').write_text('{:journal/page-title-format "yyyy-MM-dd, EEE"}')
+        other = self.root / 'other'
+        (other / 'pages').mkdir(parents=True)
+        (other / 'pages/a.md').write_text('- TODO other\n  SCHEDULED: <2026-10-31>')
+        graphs = [(self.graph, None), (other, None)]
+        expected, _ = scan(graphs, self.cache, today=TODAY)
+        with sqlite3.connect(self.cache) as db:
+            payload = json.loads(db.execute('SELECT tasks FROM files WHERE graph=?', (str(self.graph),)).fetchone()[0])
+            payload[0]['journal_date'] = None
+            db.execute('UPDATE files SET tasks=? WHERE graph=?', (json.dumps(payload), str(self.graph)))
+        actual, stats = scan(graphs, self.cache, today=TODAY)
+        self.assertEqual(actual, expected)
+        self.assertEqual(stats['parsed'], 1)
+        self.assertEqual(stats['reused'], 1)
 
     def test_supported_roots_individually(self):
         for root in ('pages', 'journals'):
