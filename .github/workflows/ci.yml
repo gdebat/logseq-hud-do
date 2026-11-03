@@ -1,0 +1,4 @@
+make test
+make check
+make test-extension
+make check-extension
