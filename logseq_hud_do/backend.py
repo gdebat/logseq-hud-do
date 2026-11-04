@@ -258,7 +258,7 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
             try:
                 with os.fdopen(open_source(graph, 'logseq/config.edn'), encoding='utf-8') as config:
                     custom_journal = journal_format(config.read()) == CUSTOM_FORMAT
-            except (OSError, UnicodeError):
+            except FileNotFoundError:
                 custom_journal = False
             current = discover(graph)
             cached = {row[0]: row[1:] for row in connection.execute('SELECT path,mtime,size,tasks FROM files WHERE graph=?', (graph_id,))}

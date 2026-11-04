@@ -29,7 +29,7 @@ def journal_format(text):
         position += 1
         if char == '"':
             position -= 1
-            value, end = json.JSONDecoder().raw_decode(text[position:])
+            value, end = json.JSONDecoder(strict=False).raw_decode(text[position:])
             position += end
             return ('string', value)
         if char in '{[(':

@@ -100,8 +100,8 @@ YYYY-MM-DD, and English abbreviated/full month names such as Oct 31, 2026
 default English ordinal format and the exact graph setting
 `:journal/page-title-format "yyyy-MM-dd, EEE"` in `logseq/config.edn`, using English
 weekdays. Explicit pre-block `title::` takes precedence. Settings are read on
-every scan, including warm scans. Missing, unreadable, malformed or symlinked
-config and other formats retain the default fallback; arbitrary custom formats
+every scan, including warm scans. Missing or malformed config and other formats retain the default fallback.
+Unreadable, invalid UTF-8, symlinked or nonregular config produces a scan error; arbitrary custom formats
 and Logseq DB graphs remain unsupported. Dates without valid ISO calendar
 values and invalid UTF-8 fail the refresh with source context. Deadline dates do not classify
 tasks. Markdown is never executed or rendered.

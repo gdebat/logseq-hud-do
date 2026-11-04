@@ -495,6 +495,23 @@ class BackendTests(unittest.TestCase):
                 self.assertEqual(tasks['task']['source_page'], f'{date.isoformat()}, {weekday}')
                 self.assertTrue(tasks['other']['source_page'].startswith('Nov '))
 
+    def test_multiline_config_navigation(self):
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/2026_11_03.md', '- TODO task')
+        multiline = '"first\nsecond"'
+        forms = [f'{multiline} :value', f':macro {multiline}',
+                 f':vector [{multiline}]', f':list ({multiline})',
+                 f':set #{{{multiline}}}', f':tag #example {multiline}',
+                 f'#_ {multiline}']
+        for form in forms:
+            with self.subTest(form=form):
+                self.write('logseq/config.edn', '{' + form +
+                           ' :journal/page-title-format "yyyy-MM-dd, EEE"}')
+                for _ in range(2):
+                    result, _ = scan([(self.graph, None)], self.cache, today=dt.date(2026, 11, 3))
+                    self.assertEqual(result['today'][0]['deep_link'],
+                                     'logseq://graph/graph?page=2026-11-03%2C%20Tue')
+
     def test_journal_config_input_boundaries(self):
         from logseq_hud_do.journal_config import journal_format
         key = ':journal/page-title-format'
@@ -520,26 +537,44 @@ class BackendTests(unittest.TestCase):
         config = self.graph / 'logseq/config.edn'
         outside = self.root / 'config.edn'
         outside.write_text(f'{{{key} {value}}}')
+        for _ in range(2):
+            self.assertEqual(self.scan()[0]['today'][0]['source_page'], 'Oct 31st, 2026')
         config.symlink_to(outside)
-        self.assertEqual(self.scan()[0]['today'][0]['source_page'], 'Oct 31st, 2026')
+        with self.assertRaises(OSError):
+            self.scan()
         config.unlink()
         config.write_bytes(b'\xff')
-        self.assertEqual(self.scan()[0]['today'][0]['source_page'], 'Oct 31st, 2026')
+        with self.assertRaises(UnicodeError):
+            self.scan()
+        completed = subprocess.run([sys.executable, '-m', 'logseq_hud_do', '--graph', str(self.graph),
+                                    '--cache', str(self.cache)], capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout, '')
+        self.assertIn('error', json.loads(completed.stderr))
         config.unlink()
-        with patch('logseq_hud_do.backend.open_source', side_effect=PermissionError):
-            self.assertEqual(self.scan()[0]['today'][0]['source_page'], 'Oct 31st, 2026')
+        config.mkdir()
+        with self.assertRaises(OSError):
+            self.scan()
+        config.rmdir()
+        for error in [PermissionError('denied'), OSError('read failed')]:
+            with self.subTest(error=error), patch('logseq_hud_do.backend.open_source', side_effect=error):
+                with self.assertRaises(OSError):
+                    self.scan()
         (self.graph / 'logseq').rmdir()
         (self.graph / 'logseq').symlink_to(self.root, target_is_directory=True)
-        self.assertEqual(self.scan()[0]['today'][0]['source_page'], 'Oct 31st, 2026')
+        with self.assertRaises(OSError):
+            self.scan()
 
     def test_nonregular_sources_do_not_block(self):
         self.write('journals/2026_10_31.md', '- TODO task')
         (self.graph / 'logseq').mkdir()
         config = self.graph / 'logseq/config.edn'
         os.mkfifo(config)
-        script = "from pathlib import Path; from logseq_hud_do.backend import scan; import sys; scan([(Path(sys.argv[1]), None)], Path(sys.argv[2]))"
-        subprocess.run([sys.executable, '-c', script, str(self.graph), str(self.cache)],
-                       check=True, timeout=3)
+        completed = subprocess.run([sys.executable, '-m', 'logseq_hud_do', '--graph', str(self.graph), '--cache', str(self.cache)],
+                       capture_output=True, text=True, timeout=3)
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout, '')
+        self.assertIn('error', json.loads(completed.stderr))
         from logseq_hud_do.backend import open_source
         os.mkfifo(self.graph / 'pages/fifo.md')
         for relative in ['logseq/config.edn', 'pages/fifo.md', 'pages']:
