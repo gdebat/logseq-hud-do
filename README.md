@@ -94,11 +94,26 @@ linter or type checker is configured.
 
 ## Limitations and troubleshooting
 
-Only OG Markdown is supported. Journal names supported are YYYY_MM_DD,
-YYYY-MM-DD, and English abbreviated/full month names such as Oct 31, 2026
-(month-name parsing follows the process locale). Arbitrary custom journal
-formats and Logseq DB graphs are unsupported. Dates without valid ISO calendar
-values and invalid UTF-8 fail the refresh with source context. Deadline dates do not classify
+Only OG Markdown is supported. Journal filenames use the graph's supported
+`:journal/file-name-format`. When absent, the default YYYY_MM_DD and legacy
+YYYY-MM-DD and English abbreviated/full month names such as Oct 31, 2026
+are recognized (month-name parsing follows the process locale). Journal page titles use the graph's
+`:journal/page-title-format`, independently of `:journal/file-name-format`.
+The supported patterns, defaults and filename rules are listed in
+[OG navigation verification](docs/navigation-acceptance.md).
+Explicit pre-block `title::` takes precedence. Settings are read on every scan,
+including warm scans. Missing config files or keys use defaults. Syntax errors
+detected by the limited reader fail the scan through the CLI/HUD error channel,
+without generating navigation links. The reader does not fully validate EDN
+atoms. Configuration exceeding the reader's supported nesting depth and
+unsupported, empty or non-string patterns also fail the scan explicitly.
+Unreadable, invalid UTF-8, symlinked or nonregular config produces a scan error.
+Arbitrary custom formats and Logseq DB graphs remain unsupported. Invalid scheduling
+calendar dates and invalid UTF-8 fail the refresh with source context. Without an
+explicit title or configured filename format, unrecognized journal filenames
+(including invalid date-shaped stems) use the decoded filename stem as the page
+title. A configured filename format that cannot resolve a task-bearing journal
+path instead fails the scan. Deadline dates do not classify
 tasks. Markdown is never executed or rendered.
 
 Without a UUID, identifiers hash graph, file, original task text, status and
@@ -200,8 +215,11 @@ settings, never Markdown. Preferences → Hidden Tasks supports search, Unhide,
 and confirmed Unhide All, synchronized with the running extension.
 
 Hidden tasks persist in a version 2 GSettings registry. Identity uses the
-canonical graph directory, resolved originating page title (including journal
-titles), normalized task text and scheduled date. Tasks share hidden status when graph, page, normalized content and scheduled
-date all match. Different scheduled dates or graphs produce separate hidden identities. TODO/DOING and priority changes preserve it; text,
+canonical graph directory, resolved originating page title, normalized task text
+and scheduled date. Tasks share hidden status when graph, page, normalized content and scheduled
+date all match. Distinct resolved page titles remain separate. Changing the journal
+title configuration can reveal tasks whose resolved title changes; hidden status
+is not preserved across title formats.
+Different scheduled dates or graphs produce separate hidden identities. TODO/DOING and priority changes preserve it; text,
 page, graph directory or scheduled-date changes can reveal a task. Display
 filters do not affect identity. Old experimental UUID records are not migrated.

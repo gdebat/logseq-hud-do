@@ -84,3 +84,29 @@ async function checkFieldAgreement() {
 }
 await checkFieldAgreement();
 console.log('Supported-field construction, validation and Unhide agreement passed');
+
+for (const block_uuid of [null, '12345678-1234-1234-1234-123456789abc']) {
+    const candidates = [null, '2026-11-03'].flatMap(journal_date =>
+        ['2026-11-03, Tue', 'Nov 3rd, 2026'].map(source_page =>
+            ({...task, journal_date, source_page, block_uuid})));
+    const grouped = {today: candidates, overdue: candidates, upcoming: candidates};
+    for (const hidden of candidates) {
+        const expected = Object.fromEntries(Object.entries(grouped).map(([section, tasks]) =>
+            [section, tasks.filter(candidate => candidate.source_page !== hidden.source_page)]));
+        const oldKey = JSON.stringify([hidden.graph_path, hidden.source_page, hidden.content, hidden.scheduled]);
+        for (const existing of [false, true]) {
+            raw = JSON.stringify({version: 2, tasks: existing ? [{key: oldKey,
+                description: hidden.content, graph: hidden.graph, scheduled: hidden.scheduled}] : []});
+            if (!existing) hideTask(settings, hidden);
+            assert.equal(readHidden(settings)[0].key, oldKey);
+            assert.deepEqual(visibleTasks(grouped, settings), expected);
+            const distinct = [
+                {...hidden, graph_path: '/other'}, {...hidden, content: 'Other'},
+                {...hidden, scheduled: '2026-11-04'},
+            ];
+            assert.deepEqual(visibleTasks({...data, today: distinct}, settings).today, distinct);
+            unhideTask(settings, oldKey);
+            assert.deepEqual(visibleTasks(grouped, settings), grouped);
+        }
+    }
+}

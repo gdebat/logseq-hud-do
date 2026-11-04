@@ -3,9 +3,38 @@
 The previous correction used source filename stems as page names. This fails
 for journals (`2026_10_31` versus `Oct 31st, 2026`), namespace filenames and
 escaped filenames. The backend now resolves titles before building the URI;
-explicit page `title::` wins, otherwise default OG journal titles and decoded
-triple-underscore namespace filenames are used. Custom journal title formats
-remain unsupported; validate those against a copied Logseq link before use.
+explicit page `title::` wins. Otherwise, journals with a resolved date use the
+selected graph's
+`:journal/page-title-format` in `logseq/config.edn` (default `MMM do, yyyy`).
+Supported patterns are `MMM do, yyyy`, `yyyy-MM-dd, EEE`,
+`MM/dd/yyyy`, `MM-dd-yyyy`, `MM_dd_yyyy`, `yyyy/MM/dd`, `yyyy-MM-dd`,
+`yyyy_MM_dd`, `yyyy年MM月dd日`, and `E, `, `EEE, ` or `EEEE, ` followed
+by `MM/dd/yyyy` or `yyyy/MM/dd`. Month and weekday names use English;
+`E` and `EEE` use abbreviated weekdays. Ordinals include the 11th–13th exception.
+Regular pages use decoded triple-underscore namespace filenames.
+
+`:journal/file-name-format` controls filename interpretation, independently of
+the title. Its supported patterns are the seven numeric date patterns above.
+When absent, the default `yyyy_MM_dd` and existing legacy filenames
+(`yyyy-MM-dd`, English abbreviated/full month with day and year) are recognized.
+Without a configured filename format, unresolved filenames (including invalid
+date-shaped stems) fall back to the decoded filename stem as the page title
+unless an explicit title is present.
+For journals containing task records, a configured filename pattern must match
+the journal path (relative to `journals/`, without `.md`); slash patterns use
+nested directories. A mismatch or invalid calendar date fails the scan. Task-free
+journals do not require filename-date resolution
+and cannot fail a scan because their filenames mismatch the configured pattern.
+Unsupported, empty or non-string format settings fail the scan explicitly.
+Missing configuration files or keys use defaults for each setting independently.
+Syntax errors detected by the limited reader fail the scan through the CLI/HUD
+error channel, without generating navigation links, on both cold and warm scans.
+The reader does not fully validate EDN atoms. Configuration exceeding
+the reader's supported nesting depth also fails the scan explicitly.
+Unreadable, invalid UTF-8,
+symlinked or nonregular configuration fails the scan rather than generating
+links to assumed default pages.
+Configuration changes apply on warm scans without rewriting extraction records.
 UUIDs come only from task-owned `id::` properties, never task hash identifiers.
 A syntactically valid stored UUID cannot prove the block exists in Logseq's index.
 
@@ -32,6 +61,10 @@ with Logseq's own copied URL, especially after renaming or symlinking a graph.
    `python3 -m logseq_hud_do --graph /disposable/graph --cache /tmp/hud-test.sqlite --diagnostics`.
    Diagnostics on stderr list canonical graph path, identifier, source file,
    resolved page, block reference status (valid/invalid/missing), target and URI.
+   Repeat with `:journal/page-title-format "yyyy-MM-dd, EEE"`: an untitled
+   `journals/2026_11_03.md` must target `page=2026-11-03%2C%20Tue`. Compare
+   the copied URL, direct URI activation and HUD row. Change back to the default
+   setting and repeat without editing the journal, to exercise warm-cache output.
 3. Use Logseq's Copy block URL action to obtain a genuine persisted block UUID.
    Confirm its `id::` in the disposable Markdown and compare the backend URI
    with the copied URL. Click that row: verify the exact block, not just graph.
