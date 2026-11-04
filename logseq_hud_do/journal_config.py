@@ -116,5 +116,7 @@ def journal_format(text, setting_key=':journal/page-title-format'):
             if key == ('atom', setting_key):
                 setting = value[1] if value[0] == 'string' else value
         return setting
-    except (ValueError, IndexError, RecursionError):
+    except RecursionError as error:
+        raise ValueError('logseq/config.edn exceeds supported nesting depth') from error
+    except (ValueError, IndexError):
         return None

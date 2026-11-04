@@ -654,6 +654,34 @@ class BackendTests(unittest.TestCase):
                     self.assertEqual(result['today'][0]['deep_link'],
                                      'logseq://graph/graph?page=2026-11-03%2C%20Tue')
 
+    def test_deep_journal_config_reports_cli_error(self):
+        from logseq_hud_do.journal_config import TITLE_FORMATS
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/2026_10_31.md', '- TODO task')
+        settings = [(':journal/page-title-format', json.dumps(pattern))
+                    for pattern in sorted(TITLE_FORMATS)]
+        settings += [(':journal/page-title-format', '"unsupported"'),
+                     (':journal/file-name-format', '"unsupported"')]
+        nested_forms = ['[' * 2000 + '0' + ']' * 2000,
+                        '#tag ' * 2000 + '0', '#_ ' * 2000 + '0 0']
+        for key, value in settings:
+            for nested in nested_forms:
+                for warm in (False, True):
+                    with self.subTest(key=key, value=value, form=nested[:8], warm=warm):
+                        self.cache.unlink(missing_ok=True)
+                        self.write('logseq/config.edn', '{}')
+                        if warm:
+                            self.scan()
+                        self.write('logseq/config.edn',
+                                   '{' + key + ' ' + value + ' :other ' + nested + '}')
+                        completed = subprocess.run(
+                            [sys.executable, '-m', 'logseq_hud_do', '--graph', str(self.graph),
+                             '--cache', str(self.cache)], capture_output=True, text=True, timeout=5)
+                        self.assertEqual(completed.returncode, 1)
+                        self.assertEqual(completed.stdout, '')
+                        self.assertIn('logseq/config.edn exceeds supported nesting depth',
+                                      json.loads(completed.stderr)['error'])
+
     def test_journal_config_input_boundaries(self):
         from logseq_hud_do.journal_config import journal_format
         key = ':journal/page-title-format'

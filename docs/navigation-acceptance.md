@@ -21,7 +21,9 @@ the journal path (relative to `journals/`, without `.md`); slash patterns use
 nested directories. Task-free journals do not require filename-date resolution
 and cannot fail a scan because their filenames mismatch the configured pattern.
 Unsupported, empty or non-string format settings fail the scan explicitly.
-Missing configuration or malformed EDN uses defaults. Unreadable, invalid UTF-8,
+Missing configuration or malformed EDN uses defaults. Configuration exceeding
+the reader's supported nesting depth fails the scan explicitly through the
+CLI/HUD error channel, without generating navigation links. Unreadable, invalid UTF-8,
 symlinked or nonregular configuration fails the scan rather than generating
 links to assumed default pages.
 Configuration changes apply on warm scans without rewriting extraction records.
