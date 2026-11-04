@@ -1,4 +1,47 @@
-make test
-make check
-make test-extension
-make check-extension
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Backend and Extension Checks
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3 \
+            nodejs \
+            make \
+            gjs \
+            libglib2.0-bin \
+            gnome-shell \
+            gir1.2-gtk-4.0 \
+            gir1.2-adw-1 \
+            dbus-x11
+
+      - name: Backend tests
+        run: make test
+
+      - name: Backend static checks
+        run: make check
+
+      - name: Extension tests
+        run: make test-extension
+
+      - name: Extension static checks
+        run: make check-extension
