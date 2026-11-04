@@ -26,10 +26,12 @@ nested directories. A mismatch or invalid calendar date fails the scan. Task-fre
 journals do not require filename-date resolution
 and cannot fail a scan because their filenames mismatch the configured pattern.
 Unsupported, empty or non-string format settings fail the scan explicitly.
-Missing configuration or syntax errors detected by the limited reader use defaults.
+Missing configuration files or keys use defaults for each setting independently.
+Syntax errors detected by the limited reader fail the scan through the CLI/HUD
+error channel, without generating navigation links, on both cold and warm scans.
 The reader does not fully validate EDN atoms. Configuration exceeding
-the reader's supported nesting depth fails the scan explicitly through the
-CLI/HUD error channel, without generating navigation links. Unreadable, invalid UTF-8,
+the reader's supported nesting depth also fails the scan explicitly.
+Unreadable, invalid UTF-8,
 symlinked or nonregular configuration fails the scan rather than generating
 links to assumed default pages.
 Configuration changes apply on warm scans without rewriting extraction records.

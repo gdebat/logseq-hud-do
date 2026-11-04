@@ -35,9 +35,11 @@ def journal_title(day, pattern):
 
 
 def journal_format(text, setting_key=':journal/page-title-format'):
-    """Read a top-level setting; missing keys or detected syntax errors return None.
+    """Read a top-level setting; return None only when the key is absent.
 
-    This limited reader does not validate EDN atom syntax."""
+    Detected syntax errors raise ValueError. This limited reader does not
+    validate EDN atom syntax.
+    """
     position = 0
     discarded = object()
 
@@ -112,10 +114,10 @@ def journal_format(text, setting_key=':journal/page-title-format'):
         whitespace()
         while position < len(text):
             if form() is not discarded:
-                return None
+                raise ValueError('expected a single configuration map')
             whitespace()
         if root[0] != '{':
-            return None
+            raise ValueError('expected a configuration map')
         values = root[1]
         setting = None
         for key, value in zip(values[::2], values[1::2]):
@@ -124,5 +126,5 @@ def journal_format(text, setting_key=':journal/page-title-format'):
         return setting
     except RecursionError as error:
         raise ValueError('logseq/config.edn exceeds supported nesting depth') from error
-    except (ValueError, IndexError):
-        return None
+    except (ValueError, IndexError) as error:
+        raise ValueError(f'logseq/config.edn: invalid configuration syntax: {error}') from error

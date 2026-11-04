@@ -621,6 +621,74 @@ class BackendTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'invalid journal filename'):
             self.scan()
 
+    def test_journal_config_errors_fail_cli_on_cold_and_warm_cache(self):
+        from logseq_hud_do.journal_config import journal_format
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/2026_10_31.md', '- TODO journal')
+        malformed = ['}', '"unterminated}', '"bad\\q"}',
+                     '"yyyy_MM_dd"', '["yyyy_MM_dd"}',
+                     '"yyyy_MM_dd"} {}', '"yyyy_MM_dd"} #_']
+        unsupported = ['"yyyy"}', '""}', '42}', 'nil}', '["yyyy_MM_dd"]}']
+        for key in (':journal/page-title-format', ':journal/file-name-format'):
+            for tail in malformed + unsupported:
+                text = '{' + key + ' ' + tail
+                error = ('logseq/config.edn: invalid configuration syntax'
+                         if tail in malformed else 'unsupported ' + key[1:])
+                with self.subTest(key=key, text=text):
+                    if tail in malformed:
+                        with self.assertRaisesRegex(ValueError, error):
+                            journal_format(text, key)
+                    else:
+                        self.assertIsNotNone(journal_format(text, key))
+                for warm in (False, True):
+                    with self.subTest(key=key, text=text, warm=warm):
+                        self.cache.unlink(missing_ok=True)
+                        self.write('logseq/config.edn', '{}')
+                        if warm:
+                            self.scan()
+                        before = self.cache.read_bytes() if warm else None
+                        self.write('logseq/config.edn', text)
+                        completed = subprocess.run(
+                            [sys.executable, '-m', 'logseq_hud_do', '--graph', str(self.graph),
+                             '--cache', str(self.cache), '--diagnostics'],
+                            capture_output=True, text=True, timeout=5)
+                        self.assertEqual(completed.returncode, 1)
+                        self.assertEqual(completed.stdout, '')
+                        self.assertIn(error, json.loads(completed.stderr)['error'])
+                        if warm:
+                            self.assertEqual(self.cache.read_bytes(), before)
+                        self.write('logseq/config.edn', '{}')
+                        result, stats = self.scan()
+                        self.assertEqual(stats['parsed'], 0 if warm else 1)
+                        self.assertEqual(stats['reused'], 1 if warm else 0)
+                        self.assertEqual(result['today'][0]['deep_link'],
+                                         'logseq://graph/graph?page=Oct+31st%2C+2026')
+
+    def test_missing_journal_settings_keep_defaults_on_cold_and_warm_cache(self):
+        from logseq_hud_do.journal_config import journal_format
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/2026_10_31.md', '- TODO journal')
+        config = self.graph / 'logseq/config.edn'
+        for text in (None, '{}', '{:other [1 2]}',
+                     '{:journal/page-title-format "MMM do, yyyy"}',
+                     '{:journal/file-name-format "yyyy_MM_dd"}'):
+            with self.subTest(text=text):
+                self.cache.unlink(missing_ok=True)
+                config.unlink(missing_ok=True)
+                if text is not None:
+                    config.write_text(text)
+                    for key in (':journal/page-title-format', ':journal/file-name-format'):
+                        if key not in text:
+                            self.assertIsNone(journal_format(text, key))
+                for warm in (False, True):
+                    result, stats = self.scan()
+                    self.assertEqual(stats['parsed'], 0 if warm else 1)
+                    self.assertEqual(stats['reused'], 1 if warm else 0)
+                    task, = result['today']
+                    self.assertEqual(task['source_page'], 'Oct 31st, 2026')
+                    self.assertEqual(task['deep_link'],
+                                     'logseq://graph/graph?page=Oct+31st%2C+2026')
+
     def test_custom_journal_weekdays_and_graph_isolation(self):
         (self.graph / 'logseq').mkdir()
         self.write('logseq/config.edn', '{:journal/page-title-format "yyyy-MM-dd, EEE"}')
@@ -698,7 +766,8 @@ class BackendTests(unittest.TestCase):
                        ' #_ :ignored :extra', ' #_ :ignored #_']:
             for key in settings:
                 with self.subTest(suffix=suffix, key=key):
-                    self.assertIsNone(journal_format(config + suffix, key))
+                    with self.assertRaisesRegex(ValueError, 'logseq/config.edn: invalid configuration syntax'):
+                        journal_format(config + suffix, key)
         (self.graph / 'logseq').mkdir()
         self.write('journals/11-03-2026.md', '- TODO journal')
         for index, suffix in enumerate(suffixes):
@@ -728,12 +797,16 @@ class BackendTests(unittest.TestCase):
                      '{' + key + ' "yyyy-MM-dd, \u0045EE"}']:
             with self.subTest(text=text):
                 self.assertEqual(journal_format(text), 'yyyy-MM-dd, EEE')
-        for text in ['', '{}', f'{{:nested {{{key} {value}}}}}',
-                     f'{{; {key} {value}\n}}', f'{{{key} {value}',
+        for text in ['{}', f'{{:nested {{{key} {value}}}}}',
+                     f'{{; {key} {value}\n}}']:
+            with self.subTest(text=text):
+                self.assertIsNone(journal_format(text))
+        for text in ['', '[]', 'nil', f'{{{key} {value}',
                      f'{{{key}}}', f'{{{key} "bad\\q"}}',
                      f'{{{key} {value}}} trailing']:
             with self.subTest(text=text):
-                self.assertIsNone(journal_format(text))
+                with self.assertRaisesRegex(ValueError, 'logseq/config.edn: invalid configuration syntax'):
+                    journal_format(text)
         self.write('journals/2026_10_31.md', '- TODO task')
         (self.graph / 'logseq').mkdir()
         config = self.graph / 'logseq/config.edn'

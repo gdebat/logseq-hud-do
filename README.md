@@ -102,10 +102,11 @@ are recognized (month-name parsing follows the process locale). Journal page tit
 The supported patterns, defaults and filename rules are listed in
 [OG navigation verification](docs/navigation-acceptance.md).
 Explicit pre-block `title::` takes precedence. Settings are read on every scan,
-including warm scans. Missing config or syntax errors detected by the limited
-reader use defaults. The reader does not fully validate EDN atoms. Configuration exceeding the reader's supported nesting depth fails the scan
-explicitly; unsupported,
-empty or non-string patterns fail the scan explicitly.
+including warm scans. Missing config files or keys use defaults. Syntax errors
+detected by the limited reader fail the scan through the CLI/HUD error channel,
+without generating navigation links. The reader does not fully validate EDN
+atoms. Configuration exceeding the reader's supported nesting depth and
+unsupported, empty or non-string patterns also fail the scan explicitly.
 Unreadable, invalid UTF-8, symlinked or nonregular config produces a scan error.
 Arbitrary custom formats and Logseq DB graphs remain unsupported. Invalid scheduling
 calendar dates and invalid UTF-8 fail the refresh with source context. Without an
