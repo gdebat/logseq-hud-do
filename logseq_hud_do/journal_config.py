@@ -35,7 +35,9 @@ def journal_title(day, pattern):
 
 
 def journal_format(text, setting_key=':journal/page-title-format'):
-    """Read a top-level setting; missing keys or malformed EDN return None."""
+    """Read a top-level setting; missing keys or detected syntax errors return None.
+
+    This limited reader does not validate EDN atom syntax."""
     position = 0
     discarded = object()
 
@@ -108,7 +110,11 @@ def journal_format(text, setting_key=':journal/page-title-format'):
     try:
         root = operand()
         whitespace()
-        if position != len(text) or root[0] != '{':
+        while position < len(text):
+            if form() is not discarded:
+                return None
+            whitespace()
+        if root[0] != '{':
             return None
         values = root[1]
         setting = None

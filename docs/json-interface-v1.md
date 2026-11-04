@@ -26,8 +26,14 @@ with the backend's roots and no-follow semantics.
 
 `source_page` is the resolved Logseq title, including default ordinal journal
 names, the supported graph-configured `yyyy-MM-dd, EEE` journal title, explicit
-`title::`, and decoded namespace filenames. Journal fallback titles are resolved
-from current configuration even when extraction records are cached. `deep_link` prefers
+`title::`, and decoded namespace filenames. For journals with a resolved date and
+no explicit title, the page title uses
+the current graph configuration even when extraction records are cached. Without
+a configured filename format, unresolved filenames (including invalid date-shaped
+stems) fall back to the decoded filename stem unless an explicit title is present.
+With a configured filename format,
+a task-bearing journal path that cannot resolve to a valid date fails the scan.
+`deep_link` prefers
 a stored block UUID; otherwise it targets that title. Display aliases never
 select the graph. Optional CLI diagnostics include per-task navigation resolution
 without changing task fields. See [manual acceptance](navigation-acceptance.md).

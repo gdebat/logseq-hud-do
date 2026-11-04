@@ -3,7 +3,8 @@
 The previous correction used source filename stems as page names. This fails
 for journals (`2026_10_31` versus `Oct 31st, 2026`), namespace filenames and
 escaped filenames. The backend now resolves titles before building the URI;
-explicit page `title::` wins, otherwise journal titles use the selected graph's
+explicit page `title::` wins. Otherwise, journals with a resolved date use the
+selected graph's
 `:journal/page-title-format` in `logseq/config.edn` (default `MMM do, yyyy`).
 Supported patterns are `MMM do, yyyy`, `yyyy-MM-dd, EEE`,
 `MM/dd/yyyy`, `MM-dd-yyyy`, `MM_dd_yyyy`, `yyyy/MM/dd`, `yyyy-MM-dd`,
@@ -16,12 +17,17 @@ Regular pages use decoded triple-underscore namespace filenames.
 the title. Its supported patterns are the seven numeric date patterns above.
 When absent, the default `yyyy_MM_dd` and existing legacy filenames
 (`yyyy-MM-dd`, English abbreviated/full month with day and year) are recognized.
+Without a configured filename format, unresolved filenames (including invalid
+date-shaped stems) fall back to the decoded filename stem as the page title
+unless an explicit title is present.
 For journals containing task records, a configured filename pattern must match
 the journal path (relative to `journals/`, without `.md`); slash patterns use
-nested directories. Task-free journals do not require filename-date resolution
+nested directories. A mismatch or invalid calendar date fails the scan. Task-free
+journals do not require filename-date resolution
 and cannot fail a scan because their filenames mismatch the configured pattern.
 Unsupported, empty or non-string format settings fail the scan explicitly.
-Missing configuration or malformed EDN uses defaults. Configuration exceeding
+Missing configuration or syntax errors detected by the limited reader use defaults.
+The reader does not fully validate EDN atoms. Configuration exceeding
 the reader's supported nesting depth fails the scan explicitly through the
 CLI/HUD error channel, without generating navigation links. Unreadable, invalid UTF-8,
 symlinked or nonregular configuration fails the scan rather than generating

@@ -682,6 +682,38 @@ class BackendTests(unittest.TestCase):
                         self.assertIn('logseq/config.edn exceeds supported nesting depth',
                                       json.loads(completed.stderr)['error'])
 
+    def test_trailing_journal_config_discards(self):
+        from logseq_hud_do.journal_config import journal_format
+        settings = {':journal/page-title-format': 'yyyy-MM-dd, EEE',
+                    ':journal/file-name-format': 'MM-dd-yyyy'}
+        config = '{' + ' '.join(key + ' ' + json.dumps(value)
+                                for key, value in settings.items()) + '}'
+        suffixes = ['', ' #_ :ignored', ' #_ {:ignored [1 2]}',
+                    ' #_ #_ :inner :outer', ' #_ :one #_ [:two] ; comment']
+        for suffix in suffixes:
+            for key, value in settings.items():
+                with self.subTest(suffix=suffix, key=key):
+                    self.assertEqual(journal_format(config + suffix, key), value)
+        for suffix in [' :extra', ' {}', ' #_', ' #_ [', ' #_ #_ :inner',
+                       ' #_ :ignored :extra', ' #_ :ignored #_']:
+            for key in settings:
+                with self.subTest(suffix=suffix, key=key):
+                    self.assertIsNone(journal_format(config + suffix, key))
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/11-03-2026.md', '- TODO journal')
+        for index, suffix in enumerate(suffixes):
+            self.write('logseq/config.edn', config + suffix)
+            before = self.cache.read_bytes() if self.cache.exists() else None
+            result, stats = scan([(self.graph, None)], self.cache, today=dt.date(2026, 11, 3))
+            task, = result['today']
+            self.assertEqual(task['journal_date'], '2026-11-03')
+            self.assertEqual(task['source_page'], '2026-11-03, Tue')
+            self.assertEqual(task['deep_link'],
+                             'logseq://graph/graph?page=2026-11-03%2C%20Tue')
+            self.assertEqual(stats['parsed'], 0 if index else 1)
+            if before is not None:
+                self.assertEqual(self.cache.read_bytes(), before)
+
     def test_journal_config_input_boundaries(self):
         from logseq_hud_do.journal_config import journal_format
         key = ':journal/page-title-format'
