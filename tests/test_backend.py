@@ -506,6 +506,34 @@ class BackendTests(unittest.TestCase):
                         self.assertEqual(stats['parsed'], 0)
                         self.assertEqual(self.cache.read_bytes(), before)
 
+    def test_supported_journal_titles_preserve_year_padding(self):
+        from urllib.parse import parse_qs, urlsplit
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/0999_11_03.md', '- TODO journal\n  SCHEDULED: <2026-11-03>')
+        cases = {
+            'MMM do, yyyy': 'Nov 3rd, 0999',
+            'yyyy-MM-dd, EEE': '0999-11-03, Sun',
+            'MM/dd/yyyy': '11/03/0999', 'MM-dd-yyyy': '11-03-0999',
+            'MM_dd_yyyy': '11_03_0999', 'yyyy/MM/dd': '0999/11/03',
+            'yyyy-MM-dd': '0999-11-03', 'yyyy_MM_dd': '0999_11_03',
+            'yyyy年MM月dd日': '0999年11月03日',
+        }
+        for prefix, weekday in [('E', 'Sun'), ('EEE', 'Sun'), ('EEEE', 'Sunday')]:
+            for date, expected in [('MM/dd/yyyy', '11/03/0999'), ('yyyy/MM/dd', '0999/11/03')]:
+                cases[prefix + ', ' + date] = weekday + ', ' + expected
+        for pattern, expected in cases.items():
+            with self.subTest(pattern=pattern):
+                self.write('logseq/config.edn', '{:journal/page-title-format ' + json.dumps(pattern) + '}')
+                for _ in range(2):
+                    before = self.cache.read_bytes() if self.cache.exists() else None
+                    result, stats = scan([(self.graph, None)], self.cache, today=dt.date(2026, 11, 3))
+                    task = result['today'][0]
+                    self.assertEqual(task['source_page'], expected)
+                    self.assertEqual(parse_qs(urlsplit(task['deep_link']).query)['page'], [expected])
+                    if before is not None:
+                        self.assertEqual(stats['parsed'], 0)
+                        self.assertEqual(self.cache.read_bytes(), before)
+
     def test_ordinal_journal_days(self):
         from logseq_hud_do.journal_config import journal_title, DEFAULT_TITLE_FORMAT
         for day, suffix in [(1, 'st'), (2, 'nd'), (3, 'rd'), (11, 'th'), (12, 'th'),
@@ -523,6 +551,20 @@ class BackendTests(unittest.TestCase):
             self.assertEqual(result['today'][0]['source_page'],
                              '2026-11-03' if title == 'yyyy-MM-dd' else 'Nov 3rd, 2026')
         self.assertEqual(stats['parsed'], 0)
+
+    def test_explicit_title_configured_journal_is_today(self):
+        (self.graph / 'logseq').mkdir()
+        self.write('logseq/config.edn', '{:journal/file-name-format "MM-dd-yyyy"}')
+        self.write('journals/11-03-2026.md', 'title:: Named journal\n- TODO journal')
+        for repeat in range(2):
+            result, stats = scan([(self.graph, None)], self.cache, today=dt.date(2026, 11, 3))
+            self.assertEqual(len(result['today']), 1)
+            task = result['today'][0]
+            self.assertIsNone(task['scheduled'])
+            self.assertEqual(task['journal_date'], '2026-11-03')
+            self.assertEqual(task['source_page'], 'Named journal')
+            self.assertEqual(task['deep_link'], 'logseq://graph/graph?page=Named+journal')
+            self.assertEqual(stats['parsed'], 0 if repeat else 1)
 
     def test_invalid_configured_formats_fail_scan(self):
         (self.graph / 'logseq').mkdir()

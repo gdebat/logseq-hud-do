@@ -23,14 +23,15 @@ def journal_title(day, pattern):
     if pattern == DEFAULT_TITLE_FORMAT:
         suffix = 'th' if 10 <= day.day % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(day.day % 10, 'th')
         month = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split()[day.month - 1]
-        return f'{month} {day.day}{suffix}, {day.year}'
+        return f'{month} {day.day}{suffix}, {day.year:04d}'
     weekday = WEEKDAYS[day.weekday()]
     if pattern == 'yyyy-MM-dd, EEE':
         return f'{day.isoformat()}, {weekday[:3]}'
-    if pattern in DATE_FORMATS:
-        return day.strftime(DATE_FORMATS[pattern])
-    prefix, date = pattern.split(', ')
-    return (weekday if prefix == 'EEEE' else weekday[:3]) + ', ' + day.strftime(DATE_FORMATS[date])
+    prefix = ''
+    if pattern not in DATE_FORMATS:
+        weekday_format, pattern = pattern.split(', ')
+        prefix = (weekday if weekday_format == 'EEEE' else weekday[:3]) + ', '
+    return prefix + day.strftime(DATE_FORMATS[pattern].replace('%Y', f'{day.year:04d}'))
 
 
 def journal_format(text, setting_key=':journal/page-title-format'):
