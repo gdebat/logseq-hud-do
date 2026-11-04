@@ -552,6 +552,47 @@ class BackendTests(unittest.TestCase):
                              '2026-11-03' if title == 'yyyy-MM-dd' else 'Nov 3rd, 2026')
         self.assertEqual(stats['parsed'], 0)
 
+    def test_task_free_mismatched_journals_preserve_other_tasks(self):
+        from logseq_hud_do.journal_config import DATE_FORMATS
+        (self.graph / 'logseq').mkdir()
+        self.write('pages/Regular.md', '- TODO regular\n  SCHEDULED: <2026-11-03>')
+        other = self.root / 'other'
+        (other / 'pages').mkdir(parents=True)
+        (other / 'pages/Other.md').write_text('- TODO other\n  SCHEDULED: <2026-11-03>')
+        for index, text in enumerate(('', '- ordinary note', '- DONE completed',
+                                       '- ```\n  - TODO example\n  ```')):
+            self.write(f'journals/old-{index}.md', text)
+        for index, (pattern, date_format) in enumerate(DATE_FORMATS.items()):
+            with self.subTest(pattern=pattern):
+                matching = self.graph / 'journals' / (dt.date(2026, 11, 3).strftime(date_format) + '.md')
+                matching.parent.mkdir(parents=True, exist_ok=True)
+                matching.write_text('- TODO journal')
+                self.write('logseq/config.edn', '{:journal/file-name-format ' + json.dumps(pattern) + '}')
+                cache = self.root / (str(index) + '.sqlite')
+                for repeat in range(2):
+                    result, stats = scan([(self.graph, None), (other, None)], cache,
+                                         today=dt.date(2026, 11, 3))
+                    self.assertEqual({task['content'] for task in result['today']},
+                                     {'regular', 'other', 'journal'})
+                    self.assertEqual(len(stats['navigation']), 3)
+                    self.assertEqual(stats['parsed'], 0 if repeat else 7)
+                    self.assertEqual(stats['reused'], 7 if repeat else 0)
+                matching.unlink()
+
+    def test_filename_format_change_rejects_cached_task_mismatch(self):
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/11-03-2026.md', '- TODO journal')
+        self.write('logseq/config.edn', '{:journal/file-name-format "MM-dd-yyyy"}')
+        result, stats = scan([(self.graph, None)], self.cache, today=dt.date(2026, 11, 3))
+        self.assertEqual(result['today'][0]['source_page'], 'Nov 3rd, 2026')
+        self.assertEqual(stats['parsed'], 1)
+        before = self.cache.read_bytes()
+        self.write('logseq/config.edn', '{:journal/file-name-format "yyyy-MM-dd"}')
+        with patch('logseq_hud_do.backend.parse', side_effect=AssertionError('must reuse extraction')):
+            with self.assertRaisesRegex(ValueError, 'invalid journal filename for yyyy-MM-dd'):
+                scan([(self.graph, None)], self.cache, today=dt.date(2026, 11, 3))
+        self.assertEqual(self.cache.read_bytes(), before)
+
     def test_explicit_title_configured_journal_is_today(self):
         (self.graph / 'logseq').mkdir()
         self.write('logseq/config.edn', '{:journal/file-name-format "MM-dd-yyyy"}')

@@ -16,8 +16,10 @@ Regular pages use decoded triple-underscore namespace filenames.
 the title. Its supported patterns are the seven numeric date patterns above.
 When absent, the default `yyyy_MM_dd` and existing legacy filenames
 (`yyyy-MM-dd`, English abbreviated/full month with day and year) are recognized.
-A configured filename pattern must match the journal path (relative to
-`journals/`, without `.md`); slash patterns use nested directories.
+For journals containing task records, a configured filename pattern must match
+the journal path (relative to `journals/`, without `.md`); slash patterns use
+nested directories. Task-free journals do not require filename-date resolution
+and cannot fail a scan because their filenames mismatch the configured pattern.
 Unsupported, empty or non-string format settings fail the scan explicitly.
 Missing configuration or malformed EDN uses defaults. Unreadable, invalid UTF-8,
 symlinked or nonregular configuration fails the scan rather than generating

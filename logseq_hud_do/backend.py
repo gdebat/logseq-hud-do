@@ -297,7 +297,7 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
                     stats['parsed'] += 1
                 records = [dict(record) for record in records]
                 block_states = [r.pop('block_reference_status', 'missing') for r in records]
-                date = journal_date(relative, file_format)
+                date = journal_date(relative, file_format) if records else None
                 for record in records:
                     journal_fallback = record.pop('_journal_fallback')
                     custom_title = journal_fallback and title_format != DEFAULT_TITLE_FORMAT
