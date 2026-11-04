@@ -458,8 +458,7 @@ class BackendTests(unittest.TestCase):
                 (None, 'Nov 3rd, 2026', 'Nov+3rd%2C+2026'),
                 ('yyyy-MM-dd, EEE', '2026-11-03, Tue', '2026-11-03%2C%20Tue'),
                 (None, 'Nov 3rd, 2026', 'Nov+3rd%2C+2026'),
-                ('yyyy-MM-dd, EEE', '2026-11-03, Tue', '2026-11-03%2C%20Tue'),
-                ('yyyy', 'Nov 3rd, 2026', 'Nov+3rd%2C+2026')]:
+                ('yyyy-MM-dd, EEE', '2026-11-03, Tue', '2026-11-03%2C%20Tue')]:
             self.write('logseq/config.edn', '{}' if setting is None else
                        '{:journal/page-title-format ' + json.dumps(setting) + '}')
             for repeat in range(2):
@@ -478,6 +477,66 @@ class BackendTests(unittest.TestCase):
                     self.assertNotIn('_journal_fallback', task)
                 self.assertEqual(stats['navigation'][0]['page'], title)
                 self.assertEqual(stats['navigation'][0]['deep_link'], by_content['fallback']['deep_link'])
+
+    def test_supported_journal_title_inventory(self):
+        from urllib.parse import parse_qs, urlsplit
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/2026_11_03.md', '- TODO journal')
+        cases = {
+            'MMM do, yyyy': 'Nov 3rd, 2026',
+            'yyyy-MM-dd, EEE': '2026-11-03, Tue',
+            'MM/dd/yyyy': '11/03/2026', 'MM-dd-yyyy': '11-03-2026',
+            'MM_dd_yyyy': '11_03_2026', 'yyyy/MM/dd': '2026/11/03',
+            'yyyy-MM-dd': '2026-11-03', 'yyyy_MM_dd': '2026_11_03',
+            'yyyy年MM月dd日': '2026年11月03日',
+        }
+        for prefix, weekday in [('E', 'Tue'), ('EEE', 'Tue'), ('EEEE', 'Tuesday')]:
+            for date, expected in [('MM/dd/yyyy', '11/03/2026'), ('yyyy/MM/dd', '2026/11/03')]:
+                cases[prefix + ', ' + date] = weekday + ', ' + expected
+        for pattern, expected in cases.items():
+            with self.subTest(pattern=pattern):
+                self.write('logseq/config.edn', '{:journal/page-title-format ' + json.dumps(pattern) + '}')
+                for _ in range(2):
+                    before = self.cache.read_bytes() if self.cache.exists() else None
+                    result, stats = scan([(self.graph, None)], self.cache, today=dt.date(2026, 11, 3))
+                    task = result['today'][0]
+                    self.assertEqual(task['source_page'], expected)
+                    self.assertEqual(parse_qs(urlsplit(task['deep_link']).query)['page'], [expected])
+                    if before is not None:
+                        self.assertEqual(stats['parsed'], 0)
+                        self.assertEqual(self.cache.read_bytes(), before)
+
+    def test_ordinal_journal_days(self):
+        from logseq_hud_do.journal_config import journal_title, DEFAULT_TITLE_FORMAT
+        for day, suffix in [(1, 'st'), (2, 'nd'), (3, 'rd'), (11, 'th'), (12, 'th'),
+                            (13, 'th'), (21, 'st'), (22, 'nd'), (23, 'rd'), (31, 'st')]:
+            self.assertEqual(journal_title(dt.date(2026, 10, day), DEFAULT_TITLE_FORMAT),
+                             f'Oct {day}{suffix}, 2026')
+
+    def test_configured_journal_filenames(self):
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/11-03-2026.md', '- TODO journal')
+        for title in ['yyyy-MM-dd', 'MMM do, yyyy']:
+            self.write('logseq/config.edn',
+                       '{:journal/file-name-format "MM-dd-yyyy" :journal/page-title-format "' + title + '"}')
+            result, stats = scan([(self.graph, None)], self.cache, today=dt.date(2026, 11, 3))
+            self.assertEqual(result['today'][0]['source_page'],
+                             '2026-11-03' if title == 'yyyy-MM-dd' else 'Nov 3rd, 2026')
+        self.assertEqual(stats['parsed'], 0)
+
+    def test_invalid_configured_formats_fail_scan(self):
+        (self.graph / 'logseq').mkdir()
+        self.write('journals/2026_10_31.md', '- TODO journal')
+        self.write('pages/a.md', '- TODO page')
+        for key in ['page-title-format', 'file-name-format']:
+            for value in ['"yyyy"', '""', '42']:
+                with self.subTest(key=key, value=value):
+                    self.write('logseq/config.edn', '{:journal/' + key + ' ' + value + '}')
+                    with self.assertRaises((ValueError, TypeError)):
+                        self.scan()
+        self.write('logseq/config.edn', '{:journal/file-name-format "MM-dd-yyyy"}')
+        with self.assertRaisesRegex(ValueError, 'invalid journal filename'):
+            self.scan()
 
     def test_custom_journal_weekdays_and_graph_isolation(self):
         (self.graph / 'logseq').mkdir()

@@ -1,11 +1,40 @@
 """Read the supported journal setting without evaluating graph configuration."""
 import json
 
-CUSTOM_FORMAT = 'yyyy-MM-dd, EEE'
+DEFAULT_TITLE_FORMAT = 'MMM do, yyyy'
+DATE_FORMATS = {
+    'MM/dd/yyyy': '%m/%d/%Y', 'MM-dd-yyyy': '%m-%d-%Y',
+    'MM_dd_yyyy': '%m_%d_%Y', 'yyyy/MM/dd': '%Y/%m/%d',
+    'yyyy-MM-dd': '%Y-%m-%d', 'yyyy_MM_dd': '%Y_%m_%d',
+    'yyyy年MM月dd日': '%Y年%m月%d日',
+}
+TITLE_FORMATS = {DEFAULT_TITLE_FORMAT, 'yyyy-MM-dd, EEE', *DATE_FORMATS,
+                 *(prefix + ', ' + date for prefix in ('E', 'EEE', 'EEEE')
+                   for date in ('MM/dd/yyyy', 'yyyy/MM/dd'))}
+WEEKDAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
 
 
-def journal_format(text):
-    """Read a top-level EDN map; unsupported or malformed input uses defaults."""
+def validate_format(pattern, supported, setting):
+    if pattern is not None and (not isinstance(pattern, str) or pattern not in supported):
+        raise ValueError(f'unsupported {setting}: {pattern!r}')
+
+
+def journal_title(day, pattern):
+    if pattern == DEFAULT_TITLE_FORMAT:
+        suffix = 'th' if 10 <= day.day % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(day.day % 10, 'th')
+        month = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split()[day.month - 1]
+        return f'{month} {day.day}{suffix}, {day.year}'
+    weekday = WEEKDAYS[day.weekday()]
+    if pattern == 'yyyy-MM-dd, EEE':
+        return f'{day.isoformat()}, {weekday[:3]}'
+    if pattern in DATE_FORMATS:
+        return day.strftime(DATE_FORMATS[pattern])
+    prefix, date = pattern.split(', ')
+    return (weekday if prefix == 'EEEE' else weekday[:3]) + ', ' + day.strftime(DATE_FORMATS[date])
+
+
+def journal_format(text, setting_key=':journal/page-title-format'):
+    """Read a top-level setting; missing keys or malformed EDN return None."""
     position = 0
     discarded = object()
 
@@ -83,8 +112,8 @@ def journal_format(text):
         values = root[1]
         setting = None
         for key, value in zip(values[::2], values[1::2]):
-            if key == ('atom', ':journal/page-title-format'):
-                setting = value[1] if value[0] == 'string' else None
+            if key == ('atom', setting_key):
+                setting = value[1] if value[0] == 'string' else value
         return setting
     except (ValueError, IndexError, RecursionError):
         return None

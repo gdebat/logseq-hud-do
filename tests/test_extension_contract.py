@@ -107,7 +107,8 @@ for (const task of tasks) {
                     f'- TODO Task\n  SCHEDULED: <{today}>\n'
                     f'- TODO Block\n  id:: 12345678-1234-1234-1234-{offset:012x}\n  SCHEDULED: <{today}>')
             outputs = []
-            for setting in ('{}', '{:journal/page-title-format "yyyy-MM-dd, EEE"}', '{}'):
+            for setting in ('{}', '{:journal/page-title-format "yyyy-MM-dd, EEE"}',
+                            '{:journal/page-title-format "yyyy-MM-dd"}', '{}'):
                 (graph / 'logseq/config.edn').write_text(setting)
                 data, _ = scan([(graph, 'Graph')], Path(tmp) / 'cache', today=today)
                 outputs.append(data)

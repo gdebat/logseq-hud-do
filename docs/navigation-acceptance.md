@@ -3,12 +3,25 @@
 The previous correction used source filename stems as page names. This fails
 for journals (`2026_10_31` versus `Oct 31st, 2026`), namespace filenames and
 escaped filenames. The backend now resolves titles before building the URI;
-explicit page `title::` wins, otherwise default OG journal titles and decoded
-triple-underscore namespace filenames are used. The exact graph setting
-`:journal/page-title-format "yyyy-MM-dd, EEE"` in `logseq/config.edn` is also
-supported, with fixed English weekdays. Other custom formats retain the default
-fallback and remain unsupported; validate against a copied Logseq link before use.
-Missing, unreadable, malformed or symlinked config uses the default fallback.
+explicit page `title::` wins, otherwise journal titles use the selected graph's
+`:journal/page-title-format` in `logseq/config.edn` (default `MMM do, yyyy`).
+Supported patterns are `MMM do, yyyy`, `yyyy-MM-dd, EEE`,
+`MM/dd/yyyy`, `MM-dd-yyyy`, `MM_dd_yyyy`, `yyyy/MM/dd`, `yyyy-MM-dd`,
+`yyyy_MM_dd`, `yyyy年MM月dd日`, and `E, `, `EEE, ` or `EEEE, ` followed
+by `MM/dd/yyyy` or `yyyy/MM/dd`. Month and weekday names use English;
+`E` and `EEE` use abbreviated weekdays. Ordinals include the 11th–13th exception.
+Regular pages use decoded triple-underscore namespace filenames.
+
+`:journal/file-name-format` controls filename interpretation, independently of
+the title. Its supported patterns are the seven numeric date patterns above.
+When absent, the default `yyyy_MM_dd` and existing legacy filenames
+(`yyyy-MM-dd`, English abbreviated/full month with day and year) are recognized.
+A configured filename pattern must match the journal path (relative to
+`journals/`, without `.md`); slash patterns use nested directories.
+Unsupported, empty or non-string format settings fail the scan explicitly.
+Missing configuration or malformed EDN uses defaults. Unreadable, invalid UTF-8,
+symlinked or nonregular configuration fails the scan rather than generating
+links to assumed default pages.
 Configuration changes apply on warm scans without rewriting extraction records.
 UUIDs come only from task-owned `id::` properties, never task hash identifiers.
 A syntactically valid stored UUID cannot prove the block exists in Logseq's index.

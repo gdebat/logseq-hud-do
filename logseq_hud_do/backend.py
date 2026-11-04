@@ -12,9 +12,10 @@ import time
 from urllib.parse import urlencode, quote, quote_plus, unquote
 import uuid
 
-from .journal_config import CUSTOM_FORMAT, journal_format
+from .journal_config import (DEFAULT_TITLE_FORMAT, DATE_FORMATS, TITLE_FORMATS,
+                             journal_format, journal_title, validate_format)
 
-VERSION = 6
+VERSION = 7
 TAB_WIDTH = 4
 GRAPH_ROOTS = tuple(json.loads(Path(__file__).with_name('graph-roots.json').read_text()))
 STATUSES = ('TODO', 'DOING')
@@ -34,9 +35,15 @@ def date_value(value):
         return None
 
 
-def journal_date(path):
+def journal_date(path, pattern=None):
     if Path(path).parts[0] != 'journals':
         return None
+    if pattern is not None:
+        filename = str(Path(path).with_suffix('').relative_to('journals'))
+        try:
+            return dt.datetime.strptime(filename, DATE_FORMATS[pattern]).date().isoformat()
+        except ValueError as error:
+            raise ValueError(f'{path}: invalid journal filename for {pattern}') from error
     stem = Path(path).stem
     for pattern in ('%Y_%m_%d', '%Y-%m-%d', '%b %d, %Y', '%B %d, %Y'):
         try:
@@ -63,16 +70,14 @@ def page_name(text, relative):
     date = journal_date(relative)
     if date:
         day = dt.date.fromisoformat(date)
-        suffix = 'th' if 10 <= day.day % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(day.day % 10, 'th')
-        month = ('Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec').split()[day.month - 1]
-        return f'{month} {day.day}{suffix}, {day.year}'
+        return journal_title(day, DEFAULT_TITLE_FORMAT)
     return unquote(Path(relative).stem.replace('___', '/'))
 
 
 def parse(text, graph, relative):
     tasks, stack, occurrences = [], [], {}
     source_page = page_name(text, relative)
-    journal_fallback = bool(journal_date(relative) and not explicit_page_title(text))
+    journal_fallback = bool(Path(relative).parts[0] == 'journals' and not explicit_page_title(text))
     fence = None
     for number, line in enumerate(text.splitlines(), 1):
         match = BLOCK.match(line)
@@ -193,7 +198,7 @@ def cached_records(payload, graph, relative):
                     return None
             if type(record.get('_journal_fallback')) is not bool:
                 return None
-            if record['_journal_fallback'] and record['journal_date'] is None:
+            if record['_journal_fallback'] and journal_date(relative) and record['journal_date'] is None:
                 return None
             location = record.get('block_location')
             if not isinstance(location, dict) or type(location.get('line')) is not int or location['line'] < 1:
@@ -257,9 +262,15 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
             graph_id = str(graph)
             try:
                 with os.fdopen(open_source(graph, 'logseq/config.edn'), encoding='utf-8') as config:
-                    custom_journal = journal_format(config.read()) == CUSTOM_FORMAT
+                    config_text = config.read()
             except FileNotFoundError:
-                custom_journal = False
+                config_text = '{}'
+            title_format = journal_format(config_text)
+            if title_format is None:
+                title_format = DEFAULT_TITLE_FORMAT
+            file_format = journal_format(config_text, ':journal/file-name-format')
+            validate_format(title_format, TITLE_FORMATS, 'journal/page-title-format')
+            validate_format(file_format, DATE_FORMATS, 'journal/file-name-format')
             current = discover(graph)
             cached = {row[0]: row[1:] for row in connection.execute('SELECT path,mtime,size,tasks FROM files WHERE graph=?', (graph_id,))}
             stats['discovered'] += len(current)
@@ -286,12 +297,14 @@ def _scan(graphs, cache, *, full_rescan=False, horizon=7, today=None):
                     stats['parsed'] += 1
                 records = [dict(record) for record in records]
                 block_states = [r.pop('block_reference_status', 'missing') for r in records]
+                date = journal_date(relative, file_format)
                 for record in records:
-                    custom_title = record.pop('_journal_fallback') and custom_journal
-                    if custom_title:
-                        day = dt.date.fromisoformat(record['journal_date'])
-                        weekday = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')[day.weekday()]
-                        record['source_page'] = f'{day.isoformat()}, {weekday}'
+                    journal_fallback = record.pop('_journal_fallback')
+                    custom_title = journal_fallback and title_format != DEFAULT_TITLE_FORMAT
+                    if Path(relative).parts[0] == 'journals':
+                        record['journal_date'] = date
+                        if date and journal_fallback:
+                            record['source_page'] = journal_title(dt.date.fromisoformat(date), title_format)
                     record['graph_path'] = graph_id
                     record['graph'] = name or graph.name
                     target = record['block_uuid'] or record['source_page']
