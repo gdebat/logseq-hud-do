@@ -118,8 +118,11 @@ hud._addTask = task => rendered.push(task);
 hud._render();
 assert.deepEqual(headings(), ['Today (1)', 'Today — Unscheduled (2)', 'Overdue (1)', 'Upcoming (1)']);
 assert.deepEqual(rendered, [scheduled, ...unscheduled, overdue, upcoming]);
+assert.equal(hud._count.text, '3');
 const savedRegistry = registry;
 const savedTimers = [...timers.keys()];
+const refresh = hud._controller.refresh;
+hud._controller.refresh = () => assert.fail('Visibility changes must not refresh the backend');
 for (const enabled of [false, true]) {
     rendered.length = 0;
     values['show-today-unscheduled'] = enabled;
@@ -128,14 +131,47 @@ for (const enabled of [false, true]) {
         ? ['Today (1)', 'Today — Unscheduled (2)', 'Overdue (1)', 'Upcoming (1)']
         : ['Today (1)', 'Overdue (1)', 'Upcoming (1)']);
     assert.deepEqual(rendered, enabled ? [scheduled, ...unscheduled, overdue, upcoming] : [scheduled, overdue, upcoming]);
-    assert.equal(hud._count.text, '3');
+    assert.equal(hud._count.text, enabled ? '3' : '1');
     assert.equal(registry, savedRegistry);
     assert.equal(JSON.stringify(hud._data), snapshot);
     assert.deepEqual([...timers.keys()], savedTimers);
 }
+hideTask(settings, unscheduled[0]);
+const hiddenRegistry = registry;
+for (const enabled of [true, false, true]) {
+    rendered.length = 0;
+    values['show-today-unscheduled'] = enabled;
+    settings.handlers.changed(settings, 'show-today-unscheduled');
+    assert.equal(hud._count.text, enabled ? '2' : '1');
+    assert.deepEqual(headings(), enabled
+        ? ['Today (1)', 'Today — Unscheduled (1)', 'Overdue (1)', 'Upcoming (1)']
+        : ['Today (1)', 'Overdue (1)', 'Upcoming (1)']);
+    assert.deepEqual(rendered, enabled ? [scheduled, unscheduled[1], overdue, upcoming] : [scheduled, overdue, upcoming]);
+    assert.equal(registry, hiddenRegistry);
+    assert.equal(JSON.stringify(hud._data), snapshot);
+    assert.deepEqual([...timers.keys()], savedTimers);
+}
+settings.set_string('hidden-tasks-v2', savedRegistry);
+hud._controller.refresh = refresh;
+// Overdue and Upcoming visibility does not contribute to the Today counter.
+for (const enabled of [false, true]) {
+    values['show-today-unscheduled'] = enabled;
+    for (const showOverdue of [false, true]) {
+        for (const showUpcoming of [false, true]) {
+            values['show-overdue'] = showOverdue;
+            values['show-upcoming'] = showUpcoming;
+            rendered.length = 0;
+            hud._render();
+            assert.equal(hud._count.text, enabled ? '3' : '1');
+            assert.deepEqual(rendered, [scheduled, ...(enabled ? unscheduled : []),
+                ...(showOverdue ? [overdue] : []), ...(showUpcoming ? [upcoming] : [])]);
+        }
+    }
+}
 hud._data = {today: [], overdue: [], upcoming: []};
 hud._render();
 assert.equal(hud._rows.children.length, 0);
+assert.equal(hud._count.text, '0');
 hud._addTask = addTask;
 const metadataTasks = [
     {...task, scheduled: '2026-10-31'},

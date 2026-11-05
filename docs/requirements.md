@@ -354,7 +354,8 @@ Display nonempty sections in this order:
 4. Upcoming
 
 Each section displays its task count. “Show today's unscheduled tasks” defaults to
-enabled and controls only the second section. Changes apply immediately and
+enabled and controls the second section and its contribution to the panel Today
+count. Changes apply immediately and
 persist through GSettings, without changing task identities or hidden-task records.
 
 The dropdown must support:

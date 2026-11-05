@@ -152,7 +152,8 @@ visibility, today's unscheduled task visibility (enabled by default), and the pa
 Today count. Scheduled tasks appear in Today; unscheduled tasks from today's
 journal appear in Today — Unscheduled. Empty sections are omitted. The unscheduled
 visibility switch takes effect immediately and persists across sessions without
-changing individually hidden tasks. The panel count still includes both Today groups.
+changing individually hidden tasks. The panel count includes visible tasks from
+both Today groups, excluding unscheduled tasks when their visibility switch is off.
 Directories must contain non-symlink pages/ or journals/. The backend validates graph access
 again on every refresh. Missing or unreadable graphs display an error rather
 than stale tasks; correct the directory and select Refresh.

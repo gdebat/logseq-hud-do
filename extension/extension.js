@@ -133,13 +133,16 @@ export default class LogseqHudDo extends Extension {
         if (!this._data)
             return;
         const data = visibleTasks(this._data, this._settings);
+        const scheduledToday = data.today.filter(task => task.scheduled !== null);
+        const unscheduledToday = this._settings.get_boolean('show-today-unscheduled')
+            ? data.today.filter(task => task.scheduled === null) : [];
         this._message.hide();
-        this._count.text = this._settings.get_boolean('show-today-count') ? String(data.today.length) : '';
+        this._count.text = this._settings.get_boolean('show-today-count')
+            ? String(scheduledToday.length + unscheduledToday.length) : '';
         this._rows.destroy_all_children();
         for (const [title, tasks, enabled] of [
-            ['Today', data.today.filter(task => task.scheduled !== null), true],
-            ['Today — Unscheduled', data.today.filter(task => task.scheduled === null),
-                this._settings.get_boolean('show-today-unscheduled')],
+            ['Today', scheduledToday, true],
+            ['Today — Unscheduled', unscheduledToday, true],
             ['Overdue', data.overdue, this._settings.get_boolean('show-overdue')],
             ['Upcoming', data.upcoming, this._settings.get_boolean('show-upcoming')],
         ]) {
