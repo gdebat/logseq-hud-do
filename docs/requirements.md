@@ -104,7 +104,8 @@ Use the currently stored scheduled date.
 
 ## 4. Task Classification
 
-Display three categories in this order.
+The backend produces three categories in this order. The extension splits Today
+into scheduled and unscheduled presentation sections (see 8.2).
 
 ### 4.1 Today
 
@@ -345,13 +346,16 @@ Clicking the indicator opens a dropdown.
 
 ### 8.2 Dropdown layout
 
-Display three sections:
+Display nonempty sections in this order:
 
-1. TODAY
-2. OVERDUE
-3. UPCOMING
+1. Today: tasks in the backend Today category with a scheduled date.
+2. Today — Unscheduled: tasks in the backend Today category without a scheduled date.
+3. Overdue
+4. Upcoming
 
-Each section displays its task count.
+Each section displays its task count. “Show today's unscheduled tasks” defaults to
+enabled and controls only the second section. Changes apply immediately and
+persist through GSettings, without changing task identities or hidden-task records.
 
 The dropdown must support:
 

@@ -9,7 +9,7 @@ import * as Dialog from 'resource:///org/gnome/shell/ui/dialog.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-import {backendArguments, parseTasks, sections, taskPresentation, RefreshController, visibleTasks, hideTask} from './model.js';
+import {backendArguments, parseTasks, taskPresentation, RefreshController, visibleTasks, hideTask} from './model.js';
 
 export default class LogseqHudDo extends Extension {
     enable() {
@@ -47,7 +47,7 @@ export default class LogseqHudDo extends Extension {
                 this._controller.refresh();
         });
         this._settingsSignal = this._settings.connect('changed', (_settings, key) => {
-            if (key === 'hidden-tasks-v2') {
+            if (key === 'hidden-tasks-v2' || key === 'show-today-unscheduled') {
                 this._render();
                 return;
             }
@@ -136,13 +136,16 @@ export default class LogseqHudDo extends Extension {
         this._message.hide();
         this._count.text = this._settings.get_boolean('show-today-count') ? String(data.today.length) : '';
         this._rows.destroy_all_children();
-        for (const section of sections) {
-            if (section !== 'today' && !this._settings.get_boolean(`show-${section}`))
+        for (const [title, tasks, enabled] of [
+            ['Today', data.today.filter(task => task.scheduled !== null), true],
+            ['Today — Unscheduled', data.today.filter(task => task.scheduled === null),
+                this._settings.get_boolean('show-today-unscheduled')],
+            ['Overdue', data.overdue, this._settings.get_boolean('show-overdue')],
+            ['Upcoming', data.upcoming, this._settings.get_boolean('show-upcoming')],
+        ]) {
+            if (!enabled || !tasks.length)
                 continue;
-            const tasks = data[section];
-            this._rows.add_child(new St.Label({text: `${section.toUpperCase()} (${tasks.length})`, style_class: 'hud-heading'}));
-            if (!tasks.length)
-                this._rows.add_child(new St.Label({text: 'No tasks', style_class: 'hud-context'}));
+            this._rows.add_child(new St.Label({text: `${title} (${tasks.length})`, style_class: 'hud-heading'}));
             for (const task of tasks)
                 this._addTask(task);
         }

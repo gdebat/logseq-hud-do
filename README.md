@@ -148,12 +148,16 @@ gnome-extensions prefs logseq-hud-do@local
 Add each graph by absolute directory path and an optional display name. To change
 an existing path or name, remove that entry and add it again. Preferences also
 control refresh seconds (default 30), upcoming days (default 7), Overdue/Upcoming
-visibility, and the panel Today count. Today always remains visible.
+visibility, today's unscheduled task visibility (enabled by default), and the panel
+Today count. Scheduled tasks appear in Today; unscheduled tasks from today's
+journal appear in Today — Unscheduled. Empty sections are omitted. The unscheduled
+visibility switch takes effect immediately and persists across sessions without
+changing individually hidden tasks. The panel count still includes both Today groups.
 Directories must contain non-symlink pages/ or journals/. The backend validates graph access
 again on every refresh. Missing or unreadable graphs display an error rather
 than stale tasks; correct the directory and select Refresh.
 
-The scrollable dropdown preserves backend order within TODAY, OVERDUE, UPCOMING.
+The scrollable dropdown preserves backend order within Today, Today — Unscheduled, Overdue and Upcoming.
 Only DOING gets a status badge. Priority badges are High (red), Medium (amber),
 Low (blue); absent priorities have no badge. Text is displayed literally.
 Preferences provide independent line regex and multiline block filters for displayed

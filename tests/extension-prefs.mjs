@@ -188,3 +188,8 @@ assert.equal(hidden.description, '');
 assert.deepEqual(readHidden(settings), []);
 assert.equal(visibleTasks(taskData, settings).today.length, 1);
 console.log('Unhide All failed write and retry passed');
+
+const unscheduledBinding = bindings.find(([key]) => key === 'show-today-unscheduled');
+assert(unscheduledBinding);
+assert.equal(unscheduledBinding[1].title, "Show today's unscheduled tasks");
+assert.match(xml, /<key name="show-today-unscheduled" type="b"><default>true<\/default>/);

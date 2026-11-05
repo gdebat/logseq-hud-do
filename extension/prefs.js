@@ -201,6 +201,7 @@ export default class Preferences extends ExtensionPreferences {
             refresh.add(row);
         }
         for (const [key, title] of [
+            ['show-today-unscheduled', "Show today's unscheduled tasks"],
             ['show-overdue', 'Show Overdue'], ['show-upcoming', 'Show Upcoming'],
             ['show-today-count', 'Show Today count in panel'],
         ]) {

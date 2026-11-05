@@ -6,6 +6,7 @@
     <key name="graphs" type="a(ss)"><default>[]</default><summary>Graph directories and display names</summary></key>
     <key name="refresh-interval" type="i"><default>30</default><range min="5" max="86400"/><summary>Refresh interval in seconds</summary></key>
     <key name="horizon" type="i"><default>7</default><range min="0" max="3650"/><summary>Upcoming horizon in days</summary></key>
+    <key name="show-today-unscheduled" type="b"><default>true</default><summary>Show today's unscheduled tasks</summary></key>
     <key name="show-overdue" type="b"><default>true</default><summary>Show Overdue</summary></key>
     <key name="show-upcoming" type="b"><default>true</default><summary>Show Upcoming</summary></key>
     <key name="show-today-count" type="b"><default>true</default><summary>Show Today count</summary></key>
