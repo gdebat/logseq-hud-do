@@ -191,10 +191,13 @@ const settings = new Gio.Settings({settings_schema: source.lookup('org.gnome.she
 function check(value) { if (!value) throw Error('Registry contract failed'); }
 check(JSON.parse(settings.get_string('hidden-tasks-v2')).version === hiddenRegistryVersion);
 if (ARGV[1] === 'write') {
+    check(settings.get_boolean('show-today-unscheduled') === true);
+    settings.set_boolean('show-today-unscheduled', false);
     check(readHidden(settings).length === 0);
     hideTask(settings, {graph_path: '/graph', source_page: 'Page', content: 'Task', graph: 'Graph', scheduled: null});
     Gio.Settings.sync();
 } else {
+    check(settings.get_boolean('show-today-unscheduled') === false);
     check(readHidden(settings).length === 1);
     check(readHidden(settings)[0].description === 'Task');
     settings.set_string('hidden-tasks-v2', JSON.stringify({version: hiddenRegistryVersion + 1, tasks: readHidden(settings)}));
