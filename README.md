@@ -2,6 +2,8 @@
 
 ![Logo](./docs/images/logo.png)
 
+[![CI](https://github.com/gdebat/logseq-hud-do/actions/workflows/ci.yml/badge.svg)](https://github.com/gdebat/logseq-hud-do/actions/workflows/ci.yml)
+
 **What does HUD->Do mean?**
 It stands for Heads-Up Display, Now Do It. This extension brings your Logseq tasks out of the abyss of your daily Logseq journals and puts them right in your face until they actually get done.
 
