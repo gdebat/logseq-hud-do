@@ -913,6 +913,149 @@ class BackendTests(unittest.TestCase):
 
 
 class BlockContextTests(unittest.TestCase):
+    def test_context_empty_blocks_preserve_ownership(self):
+        for unit in ('\t', '  ', '    '):
+            with self.subTest(indent=repr(unit)):
+                text = ('- Root\n' + unit + '-\n' + unit * 2 + '-\n'
+                        + unit * 3 + '- TODO target\n' + unit * 3 + '  prose\n'
+                        + unit * 4 + '-\n' + unit * 5 + '- Grandchild\n'
+                        + unit * 4 + '-  \n' + unit * 5 + '- Another grandchild\n')
+                relative = self.write('pages/empty.md', text)
+                task = parse(text, str(self.graph), relative)[0]
+                context = block_context(self.graph, relative, task['id'])
+                self.assertEqual([p['content'] for p in context['parent']], ['Root', '', ''])
+                self.assertEqual(context['current']['content'], 'TODO target\nprose')
+                self.assertEqual([c['content'] for c in context['children']], ['', ''])
+                self.assertEqual([c['block_location']['line'] for c in context['children']], [6, 8])
+
+    def test_context_preserves_owned_fences_as_literal_text(self):
+        for fence in ('```', '~~~~'):
+            for closed in (True, False):
+                with self.subTest(fence=fence, closed=closed):
+                    lines = ['- TODO target', '  before', '  ' + fence + 'python',
+                             '  - code bullet', '    indented', '  \tcode\twith tabs  ',
+                             '  id:: 11111111-1111-4111-8111-111111111111',
+                             '  # code heading', '  ```not a closer', '  - TODO still code']
+                    expected = ['TODO target', 'before', fence + 'python', '- code bullet',
+                                '  indented', '\tcode\twith tabs  ', 'id:: 11111111-1111-4111-8111-111111111111',
+                                '# code heading', '```not a closer', '- TODO still code']
+                    if closed:
+                        lines += ['  ' + fence, '  after', '  - Real child']
+                        expected += [fence, 'after']
+                    text = '\n'.join(lines) + '\n'
+                    relative = self.write('pages/fence.md', text)
+                    task = parse(text, str(self.graph), relative)[0]
+                    context = block_context(self.graph, relative, task['id'])
+                    self.assertEqual(context['current']['content'], '\n'.join(expected))
+                    self.assertIsNone(context['current']['uuid'])
+                    self.assertEqual([c['content'] for c in context['children']], ['Real child'] if closed else [])
+
+    def test_context_fences_in_ancestors_and_children(self):
+        text = ('- Parent\n  ```text\n  - literal\n  ```\n'
+                '\t- TODO target\n\t\t- ~~~sh\n\t\t  echo literal\n\t\t  ~~~\n'
+                '\t\t- Sibling\n')
+        relative = self.write('pages/owners.md', text)
+        task = parse(text, str(self.graph), relative)[0]
+        context = block_context(self.graph, relative, task['id'])
+        self.assertEqual([p['content'] for p in context['parent']], ['Parent\n```text\n- literal\n```'])
+        self.assertEqual([c['content'] for c in context['children']], ['~~~sh\necho literal\n~~~', 'Sibling'])
+
+    def test_context_retains_unbulleted_heading_ancestor(self):
+        text = (ROOT_DIR / 'tests/fixtures/block-context-root-heading.md').read_text()
+        for relative in ('pages/context.md', 'journals/2026_01_02.md'):
+            with self.subTest(relative=relative):
+                (self.graph / relative).parent.mkdir(parents=True, exist_ok=True)
+                self.write(relative, text)
+                task = parse(text, str(self.graph), relative)[0]
+                context = block_context(self.graph, relative, task['id'])
+                self.assertEqual([p['content'] for p in context['parent']], ['### Root heading', '**Section**'])
+                self.assertEqual(context['parent'][0]['uuid'], '11111111-1111-4111-8111-111111111111')
+                self.assertEqual(context['current']['content'], 'TODO Selected task\nSCHEDULED: <2026-01-02 Fri>')
+                self.assertEqual([c['content'] for c in context['children']], ['Direct child'])
+
+    def test_context_three_parents_with_heading_properties_and_fences(self):
+        for unit in ('\t', '  '):
+            for with_uuid in (False, True):
+                with self.subTest(unit=repr(unit), with_uuid=with_uuid):
+                    identifier = '22222222-2222-4222-8222-222222222222'
+                    text = ('### Root heading\nid:: 11111111-1111-4111-8111-111111111111\n'
+                            'type:: example\nrelay-id:: fixture\n'
+                            + unit + '- Section\n'
+                            + unit * 2 + '- Branch\n'
+                            + unit * 3 + '- TODO Selected\n'
+                            + (unit * 3 + '  id:: ' + identifier + '\n' if with_uuid else '')
+                            + unit * 3 + '  continuation\n'
+                            + unit * 4 + '- Direct child\n'
+                            + unit * 5 + '- Grandchild\n'
+                            + unit * 4 + '- Another child\n'
+                            '### Next heading\n'
+                            '```\n### Not a heading block\n- Not a child\n```\n'
+                            + unit + '- Next branch\n')
+                    relative = self.write('pages/deep.md', text)
+                    task = parse(text, str(self.graph), relative)[0]
+                    for target in ([task['id'], identifier] if with_uuid else [task['id']]):
+                        context = block_context(self.graph, relative, target)
+                        self.assertEqual([p['content'] for p in context['parent']], ['### Root heading', 'Section', 'Branch'])
+                        self.assertEqual(context['current']['content'], 'TODO Selected\ncontinuation')
+                        self.assertEqual([c['content'] for c in context['children']], ['Direct child', 'Another child'])
+                    next_branch = next(r for r in blocks(text) if r['first'] == 'Next branch')
+                    self.assertEqual(blocks(text)[next_branch['parent']]['first'], '### Next heading')
+
+    def test_context_ancestor_continuation_does_not_clear_parent_chain(self):
+        text = ('- Project\n'
+                '\t- Backend\n'
+                '\t\t- API\n'
+                '\t\t\t- TODO Earlier task\n'
+                '\t\t\t\t- Earlier child\n'
+                '\t\t  API continuation\n'
+                '\t\t\t- TODO Selected task\n'
+                '\t\t\t\t- Direct child\n')
+        relative = self.write('pages/continuation.md', text)
+        task = parse(text, str(self.graph), relative)[1]
+        context = block_context(self.graph, relative, task['id'])
+        self.assertEqual([p['content'] for p in context['parent']],
+                         ['Project', 'Backend', 'API\nAPI continuation'])
+        self.assertEqual([c['content'] for c in context['children']], ['Direct child'])
+
+    def test_context_source_boundary(self):
+        identifier = '5a3e0b2c-1111-2222-3333-444455556666'
+        (self.root / 'outside.md').write_text(self.FIXTURE)
+        self.write('outside.md', self.FIXTURE)
+        (self.graph / 'unsupported').mkdir()
+        self.write('unsupported/task.md', self.FIXTURE)
+        self.write('pages/task.txt', self.FIXTURE)
+        for relative in ('../outside.md', str(self.root / 'outside.md'),
+                         'pages/../outside.md', 'unsupported/task.md',
+                         'pages/task.txt', '', 'pages'):
+            with self.subTest(relative=relative), self.assertRaisesRegex(ValueError, 'source path'):
+                block_context(self.graph, relative, identifier)
+
+    def test_context_valid_roots_and_symlink_components(self):
+        identifier = '5a3e0b2c-1111-2222-3333-444455556666'
+        for relative in ('pages/nested/task.md', 'journals/2026_11_06.md'):
+            (self.graph / relative).parent.mkdir(parents=True, exist_ok=True)
+            self.write(relative, self.FIXTURE)
+            self.assertEqual(block_context(self.graph, relative, identifier)['current']['uuid'], identifier)
+        outside = self.root / 'outside'
+        outside.mkdir()
+        (outside / 'task.md').write_text(self.FIXTURE)
+        (self.graph / 'pages/escape').symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(OSError):
+            block_context(self.graph, 'pages/escape/task.md', identifier)
+        (self.graph / 'journals').rename(self.graph / 'old-journals')
+        (self.graph / 'journals').symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(OSError):
+            block_context(self.graph, 'journals/task.md', identifier)
+
+    def test_cli_invalid_source_is_controlled(self):
+        result = subprocess.run(
+            [sys.executable, '-m', 'logseq_hud_do', f'--graph={self.graph}',
+             '--block-context', '../outside.md', 'missing'],
+            capture_output=True, text=True, cwd=ROOT_DIR)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, '')
+        self.assertIn('source path', json.loads(result.stderr)['error'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -939,7 +1082,7 @@ class BlockContextTests(unittest.TestCase):
     )
 
     def test_blocks_agree_with_parse_on_structure(self):
-        # The shared walker must see the same task blocks the extractor emits.
+        # The context walker must see the same task blocks the extractor emits.
         relative = 'pages/project.md'
         records = blocks(self.FIXTURE)
         tasks = parse(self.FIXTURE, 'g', relative)

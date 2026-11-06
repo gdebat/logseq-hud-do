@@ -9,8 +9,13 @@
 .hud-high { background-color: #a51d2d; color: #ffffff; }
 .hud-medium { background-color: #e5a50a; color: #241f00; }
 .hud-low { background-color: #1a5fb4; color: #ffffff; }
-.hud-preview { max-width: 28em; padding: 8px 10px; border-radius: 8px; background-color: rgba(127, 127, 127, 0.18); spacing: 2px; }
+.hud-preview { min-width: 0; max-width: 28em; }
+.hud-preview-surface { padding: 8px 10px; }
+.hud-preview-content { spacing: 2px; }
 .hud-preview-parent { font-size: 0.9em; }
 .hud-preview-current { font-weight: bold; }
-.hud-preview-child { font-size: 0.9em; padding-left: 1.2em; }
+.hud-preview-child { font-size: 0.9em; }
 .hud-preview-block { font-size: 0.9em; }
+.hud-preview-page { font-weight: bold; padding-bottom: 4px; }
+.hud-preview-separator { margin-bottom: 4px; }
+.hud-preview:hover .hud-preview-page, .hud-preview:focus .hud-preview-page { text-decoration: underline; }

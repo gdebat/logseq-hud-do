@@ -13,6 +13,7 @@ check:
 .PHONY: test-extension check-extension
 test-extension:
 	gjs -m tests/extension.mjs
+	gjs -m tests/preview-position.mjs
 	node tests/extension-regressions.mjs
 	node tests/extension-ui.mjs
 	node tests/extension-prefs.mjs

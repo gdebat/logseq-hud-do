@@ -140,39 +140,63 @@ def parse(text, graph, relative):
 
 
 def blocks(text):
-    """Yield one record per Logseq OG bullet block in source order.
+    """Return context blocks, including unbulleted top-level Markdown headings.
 
     Each record carries the block's indentation (tabs expanded to TAB_WIDTH),
     the first content line, the accumulated multi-line content, any block UUID,
     and the index of its parent block (nearest enclosing smaller indent) or
-    None. Fenced code and property lines follow the same rules as parse(): a
-    fence suspends block detection, and ``key:: value`` lines are metadata, not
-    content or children. This is the single source of truth for OG block
-    structure shared by task extraction and block-context lookup.
+    None. Fences suspend structural detection while retaining literal content;
+    property lines outside fences are metadata. Context also recognizes empty
+    bullets and exported heading roots with unindented properties. Task
+    extraction and cached identities are unchanged.
     """
+    # Context grammar includes empty bullets; the task parser remains unchanged.
+    context_block = re.compile(r'^(\s*)-(?:\s+(.*))?$')
     records, stack, fence = [], [], None
+    fence_owner, fence_indent = None, 0
     for number, line in enumerate(text.splitlines(), 1):
-        match = BLOCK.match(line)
-        body = match[2] if match else line.strip()
+        match = context_block.match(line)
+        body = (match[2] or '') if match else line.strip()
         fence_match = re.match(r'(`{3,}|~{3,})', body)
         if fence is not None:
-            if fence_match and fence_match[1][0] == fence[0] and len(fence_match[1]) >= len(fence):
+            if fence_owner is not None:
+                # Remove the fence's source indentation, retaining code's own
+                # relative whitespace. Contents never enter structural parsing.
+                offset, column = 0, 0
+                while offset < len(line) and line[offset] in ' \t' and column < fence_indent:
+                    column = column + 1 if line[offset] == ' ' else column + TAB_WIDTH - column % TAB_WIDTH
+                    offset += 1
+                literal = ' ' * max(0, column - fence_indent) + line[offset:]
+                records[fence_owner]['content'] += '\n' + literal
+            if re.fullmatch(re.escape(fence[0]) + '{' + str(len(fence)) + ',}[ \t]*', line.strip()):
                 fence = None
             continue
-        if match:
-            indent = len(match[1].expandtabs(TAB_WIDTH))
+        heading = not match and re.match(r'^#{1,6}(?:\s+|$)', line) is not None
+        if match or heading:
+            indent = len(match[1].expandtabs(TAB_WIDTH)) if match else 0
             while stack and records[stack[-1]]['indent'] >= indent:
                 stack.pop()
             parent = stack[-1] if stack else None
             records.append(dict(indent=indent, first=body, content=body,
-                                uuid=None, parent=parent, line=number))
+                                uuid=None, parent=parent, line=number, heading=heading))
             stack.append(len(records) - 1)
-        elif stack and line.strip() and len(line[:len(line) - len(line.lstrip())].expandtabs(TAB_WIDTH)) <= records[stack[-1]]['indent']:
-            stack.clear()
+        elif stack and line.strip():
+            indent = len(line[:len(line) - len(line.lstrip())].expandtabs(TAB_WIDTH))
+            # Dedented continuation/property lines may return to an ancestor.
+            # A heading root also owns its column-zero metadata/prose.
+            while stack and indent <= records[stack[-1]]['indent']:
+                if records[stack[-1]]['heading'] and indent == 0:
+                    break
+                stack.pop()
+        owner = records[stack[-1]] if stack else None
         if fence_match:
             fence = fence_match[1]
+            fence_owner = stack[-1] if stack else None
+            fence_indent = (len(line[:match.start(2)].expandtabs(TAB_WIDTH)) if match else
+                            len(line[:len(line) - len(line.lstrip())].expandtabs(TAB_WIDTH)))
+            if owner is not None and not match:
+                owner['content'] += '\n' + line.lstrip(' \t')
             continue
-        owner = records[stack[-1]] if stack else None
         if owner is None:
             continue
         identifier = ID.match(line)
@@ -181,7 +205,7 @@ def blocks(text):
                 owner['uuid'] = str(uuid.UUID(identifier[1]))
             except ValueError:
                 pass
-        elif not match and not re.match(r'^\w+::', body):
+        elif not match and not heading and not re.match(r'^[\w-]+::', body):
             owner['content'] += '\n' + body
     return records
 
@@ -195,6 +219,10 @@ def block_context(graph, relative, target, *, name=None):
     executed. Children are the immediate descendants only (one indent level
     deeper), matching how Logseq shows direct child bullets.
     """
+    path = Path(relative)
+    if (path.is_absolute() or '..' in path.parts or len(path.parts) < 2 or
+            path.parts[0] not in GRAPH_ROOTS or path.suffix.lower() != '.md'):
+        raise ValueError('invalid source path: expected graph-relative pages/ or journals/ Markdown')
     with os.fdopen(open_source(graph, relative), 'r', encoding='utf-8') as source:
         try:
             text = source.read()
