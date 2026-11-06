@@ -50,3 +50,60 @@ On GNOME 46–50 with light and dark Shell themes:
 
 Automated widget doubles cannot establish live Shell rendering, contrast or
 pointer delivery. These visual and interaction checks remain manual acceptance.
+
+## Block context preview
+
+Preview uses `view-more-symbolic` beside the unchanged Hide icon. Pointer entry
+starts a 300ms one-shot debounce. Leaving before the response cancels pending
+work; once shown, a 180ms dismissal delay lets the pointer cross the gap to the
+scrollable popup. Returning to the button reuses that response. Clicking or
+keyboard-activating Preview opens immediately; Escape dismisses it. Moving
+keyboard focus outside the interaction also dismisses it once the pointer leaves.
+Refreshing the rows, closing the menu, and disabling destroy the interaction.
+Clicking anywhere in the popup opens the selected task through the same navigation
+helper and URI as its task entry, after dismissing the popup and cleaning up its
+timers/request. Enter, keypad Enter and Space activate the focused popup; keyboard
+Preview activation gives it focus. The page header underlines on hover/focus.
+Wheel scrolling and pointer drags do not activate navigation.
+Scrollbar actors and their descendants are excluded from navigation, including
+stationary clicks on either the thumb or track.
+
+The floating box uses Shell's `popup-menu` foreground and `popup-menu-content`
+surface, with muted parent actors and literal, multiline labels. A wrapping page
+header uses the selected task's `source_page` from the latest task refresh, which
+already resolves explicit page titles and per-graph journal-title settings. No
+extra scan is needed for the header. A theme separator distinguishes it from the
+hierarchy. Only the topmost displayed block uses `•`; subsequent ancestors, the
+selected task and its direct children use `↳`. Indentation advances per ancestor,
+with all direct children aligned one level below the selected task. Width and height
+are bounded to the button monitor's work area, falling back to the primary monitor.
+Positioning prefers below, then above or beside; overflow scrolls vertically.
+The popup temporarily widens the panel menu's modal input grab to `uiGroup` so
+its scrollbar is interactive, and releases that grab on dismissal.
+
+On each supported Shell major (46–50), using disposable graphs:
+
+1. Hover briefly, then for 300ms; check only the latter opens a preview. Cross
+   between button and popup, scroll many children, re-enter, and switch rows rapidly.
+2. Check complete multiline parent/current/child content, long unbroken text,
+   both themes, and legibility of muted parents over contrasting backgrounds.
+   Check the page header (including long titles and configured journal titles),
+   one top-level bullet, arrows and indentation with/without parents or children.
+   Include an unbulleted root heading with unindented properties and three nested
+   parents; all ancestors must remain visible above the selected task.
+3. Check all screen edges, secondary monitors, work-area reservations and scaling.
+   Verify the popup stays visible and the scrollbar remains usable.
+4. Tab to Preview, activate with Space/Enter, dismiss with Escape, and move focus
+   away. Verify normal task/Hide interaction and outside-click dismissal still work.
+   Click the popup header, ancestors, selected task, children and padding; each
+   click should open the same task destination exactly once and dismiss the popup.
+   Check regular pages, configured journal titles and UUID block links. Verify
+   Enter/Space activation, hover/focus feedback, wheel scrolling and thumb dragging.
+5. Refresh, close the menu, and disable during debounce, lookup and display.
+   Check for orphan actors, modal grabs, callbacks, subprocesses and Shell errors.
+6. Delete a source or make the backend unavailable; check controlled error
+   presentation and cleanup.
+
+The GJS regression uses a real `Graphene.Rect` with doubled actor sizing. Node
+regressions cover the lifecycle and rendering decisions. Neither establishes
+live Shell pointer, grab, theme, allocation or accessibility behavior.

@@ -40,3 +40,36 @@ without changing task fields. See [manual acceptance](navigation-acceptance.md).
 
 `graph_path` is the canonical absolute graph directory, independent of display aliases.
 It is included on both cached and freshly parsed tasks.
+
+## Block-context sub-command
+
+`--block-context SOURCE_FILE BLOCK` is a separate one-shot query, not part of the
+task-list contract above. It requires exactly one `--graph` and does not touch the
+cache. The extension spawns it the same way as a scan (a fresh subprocess that
+prints one JSON object to stdout and exits); there is no persistent process or
+runtime negotiation, consistent with the no-background-service requirement.
+
+`SOURCE_FILE` is the task's `source_file` (relative to the graph); `BLOCK` is the
+identity the task list already carries — a stored block UUID, the `graph_path:uuid`
+form, or the backend task-hash `id`. Source paths must be relative Markdown
+files under `pages/` or `journals/`; absolute paths, `..` components and other
+locations are rejected by the backend itself. The source file is opened through
+the same descriptor-relative `O_NOFOLLOW` path as the scanner; symlink components
+are refused and Markdown is never executed.
+
+Successful stdout is one JSON object with `graph`, `graph_path`, `source_file`,
+`parent`, `current` and `children`. `parent` is the ancestor chain outermost to
+innermost; `children` are the direct child blocks only (one indentation level
+deeper), using the same Logseq OG block rules as extraction (indentation nesting,
+fenced-code suppression, `key:: value` metadata lines). Context additionally
+recognizes unbulleted, column-zero Markdown headings as root blocks, including
+their unindented properties. Dedented continuation lines return to the enclosing
+block without discarding its ancestors. Bare `-` lines are empty context blocks.
+Owned backtick/tilde fences and their bodies are preserved as literal content;
+apparent blocks and properties inside them are never interpreted. Code indentation
+relative to the opening fence is retained. An unclosed fence owns the remainder
+of the source. These context rules do not alter task
+extraction, identities, classification or cache contents. Each block has `content`
+(the block's own possibly multi-line text, markers and scheduling included),
+`uuid` (or null) and `block_location.line`. A missing block or unreadable source
+produces a nonzero exit and a JSON `error` string on stderr, like the scan command.

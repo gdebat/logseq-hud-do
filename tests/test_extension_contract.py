@@ -13,6 +13,48 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ContractTests(unittest.TestCase):
+    def test_preview_titles_and_real_ancestor_context_reach_ui(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture_text = (ROOT / 'tests/fixtures/block-context-root-heading.md').read_text()
+            fixture_text = fixture_text.replace('2026-01-02 Fri', dt.date.today().isoformat())
+            fixture_text = fixture_text.replace('\t\t\t- Direct child',
+                '\t\t  ```text\n\t\t  - literal code\n\t\t  id:: code-only\n\t\t  ```\n\t\t\t- Direct child')
+            journal_lines = fixture_text.splitlines()
+            journal_text = '\n'.join(journal_lines[:6] + ['\t\t- Branch'] +
+                                     ['\t' + line for line in journal_lines[6:]]) + '\n'
+            previews = []
+            for index in range(2):
+                graph = root / f'graph-{index}'
+                (graph / 'pages').mkdir(parents=True)
+                (graph / 'journals').mkdir()
+                (graph / 'pages/context.md').write_text('title:: Shared page\n' + fixture_text)
+                (graph / 'journals' / f'{dt.date.today():%Y_%m_%d}.md').write_text(journal_text)
+                if index:
+                    (graph / 'logseq').mkdir()
+                    (graph / 'logseq/config.edn').write_text('{:journal/page-title-format "yyyy-MM-dd, EEE"}')
+                result = subprocess.run(
+                    ['python3', '-m', 'logseq_hud_do', f'--graph={graph}', '--cache', str(root / 'cache')],
+                    capture_output=True, text=True, check=True, cwd=ROOT)
+                tasks = json.loads(result.stdout)['today']
+                self.assertEqual(len(tasks), 2)
+                for task in tasks:
+                    context_result = subprocess.run(
+                        ['python3', '-m', 'logseq_hud_do', f'--graph={graph}',
+                         '--block-context', task['source_file'], task['id']],
+                        capture_output=True, text=True, check=True, cwd=ROOT)
+                    context = json.loads(context_result.stdout)
+                    parents = ['### Root heading', '**Section**']
+                    if task['source_file'].startswith('journals/'):
+                        parents.append('Branch')
+                    self.assertEqual([p['content'] for p in context['parent']], parents)
+                    self.assertEqual([c['content'] for c in context['children']], ['Direct child'])
+                    self.assertIn('```text\n- literal code\nid:: code-only\n```', context['current']['content'])
+                    previews.append({'task': task, 'context': context})
+            fixture = root / 'preview-fixture.json'
+            fixture.write_text(json.dumps(previews))
+            subprocess.run(['node', 'tests/extension-ui.mjs', str(fixture)], cwd=ROOT, check=True)
+
     def test_all_producer_vocabulary_reaches_model(self):
         with tempfile.TemporaryDirectory() as tmp:
             graph = Path(tmp) / 'graph'
