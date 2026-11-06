@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {defaultTextFilters, defaultBlockFilters, sections, taskPresentation, RefreshController, backendArguments, parseTasks, visibleTasks, hideTask} from '../extension/model.js';
+import {defaultTextFilters, defaultBlockFilters, sections, taskPresentation, RefreshController, backendArguments, blockContextArguments, parseBlockContext, parseTasks, visibleTasks, hideTask} from '../extension/model.js';
 
 class Actor {
     constructor(props = {}) { Object.assign(this, props); this.children = []; this.clutter_text = {}; this.handlers = {}; }
@@ -36,7 +36,7 @@ let timerId = 0;
 const now = {add_days: () => now, get_year: () => 2026, get_month: () => 11, get_day_of_month: () => 1, difference: () => 10000000};
 const St = {BoxLayout: Actor, Icon: Actor, Label: Actor, ScrollView: Actor, Button: class extends Actor {}, PolicyType: {NEVER: 0, AUTOMATIC: 1}};
 const context = vm.createContext({
-    St, sections, taskPresentation, RefreshController, backendArguments, parseTasks, visibleTasks, hideTask,
+    St, sections, taskPresentation, RefreshController, backendArguments, blockContextArguments, parseBlockContext, parseTasks, visibleTasks, hideTask,
     Extension: class { getSettings() { return settings; } },
     Clutter: {KEY_Escape: 65307, ActorAlign: {CENTER: 0}}, Pango: {EllipsizeMode: {NONE: 0}},
     PanelMenu: {Button: Indicator},
@@ -418,3 +418,147 @@ pendingDialog.buttons[1].action();
 assert.equal(JSON.parse(registry).tasks[0].future.keep, true);
 assert.equal(rejectedHud._dialog, null);
 rejectedHud.disable();
+
+// --- Block context hover popup ---------------------------------------------
+// Augment the doubles with the actor/layout/timer surface the popup needs.
+const popupTimers = new Map();
+let popupTimerId = 1000;
+context.GLib.timeout_add = (_priority, interval, callback) => {
+    const id = ++popupTimerId;
+    popupTimers.set(id, {interval, callback: () => {
+        const keep = callback();
+        if (keep === context.GLib.SOURCE_REMOVE)
+            popupTimers.delete(id);
+        return keep;
+    }});
+    return id;
+};
+context.GLib.SOURCE_REMOVE = false;
+context.GLib.PRIORITY_DEFAULT = 0;
+const originalSourceRemove = context.GLib.Source.remove;
+context.GLib.Source.remove = id => { popupTimers.delete(id); return originalSourceRemove(id); };
+
+const uiGroup = new St.BoxLayout();
+context.Main.layoutManager = {
+    uiGroup,
+    primaryMonitor: {x: 0, y: 0, width: 1920, height: 1080},
+};
+// Extents/preferred-size helpers for positioning.
+St.Button.prototype.get_transformed_extents = function () {
+    return {
+        get_origin: () => ({x: this._x ?? 100, y: this._y ?? 50}),
+        get_size: () => ({width: 16, height: 16}),
+    };
+};
+Actor.prototype.get_preferred_width = function () { return [0, this._prefWidth ?? 200]; };
+Actor.prototype.get_preferred_height = function () { return [0, this._prefHeight ?? 120]; };
+Actor.prototype.set_position = function (x, y) { this._posX = x; this._posY = y; };
+
+let cancelFlag = false;
+context.Gio.Cancellable = class { cancel() { cancelFlag = true; } is_cancelled() { return cancelFlag; } };
+
+settings.get_value = key => ({deep_unpack: () => key === 'task-block-filters' ? [...defaultBlockFilters, ['BEGIN', 'END']] : [['/fixture', 'Fixture']]});
+const popupHud = new context.Hud();
+popupHud.path = '/extension';
+popupHud._runBackend = async () => ({today: [], overdue: [], upcoming: []});
+popupHud.enable();
+await new Promise(resolve => setImmediate(resolve));
+
+const ctxTask = {...task, graph_path: '/fixture', graph: 'Fixture', source_file: 'pages/project.md', id: 'abc123'};
+popupHud._data = {today: [ctxTask], overdue: [], upcoming: []};
+popupHud._render();
+const containers = popupHud._rows.children.filter(child => child.children?.some(c => c.accessible_name === 'Preview block context'));
+assert.equal(containers.length, 1, 'a Preview button is added per task row');
+const previewButton = containers[0].children.find(c => c.accessible_name === 'Preview block context');
+assert(previewButton, 'preview button present beside hide');
+
+// Entering starts a debounce timeout; no process spawned yet.
+const spawnBaseline = completions.length;
+cancelFlag = false;
+previewButton.handlers['enter-event']();
+assert.equal(popupTimers.size, 1, 'enter-event arms one debounce timer');
+assert.equal(completions.length, spawnBaseline, 'no backend spawn before debounce elapses');
+
+// Leaving before the debounce cancels it.
+previewButton.handlers['leave-event']();
+assert.equal(popupTimers.size, 0, 'leave-event cancels the pending debounce');
+assert.equal(completions.length, spawnBaseline, 'cancelled debounce never spawns the backend');
+
+// Enter, let the debounce fire -> spawn the one-shot backend command.
+previewButton.handlers['enter-event']();
+const [ppTimerId, ppTimer] = [...popupTimers.entries()][0];
+assert.equal(ppTimer.interval, 300, 'debounce is 300ms');
+ppTimer.callback();
+assert(!popupTimers.has(ppTimerId), 'debounce is one-shot');
+assert(spawned.includes('--block-context'), 'spawns the block-context command');
+assert(spawned.includes('pages/project.md') && spawned.includes('abc123'));
+
+// Backend replies with a context payload; popup renders on uiGroup.
+completions.shift()({stdout: JSON.stringify({
+    graph: 'Fixture', graph_path: '/fixture', source_file: 'pages/project.md',
+    parent: [{content: 'Project Alpha', uuid: null, block_location: {line: 1}}],
+    current: {content: 'TODO Ship the thing', uuid: 'u', block_location: {line: 3}},
+    children: [{content: 'TODO sub one', uuid: null, block_location: {line: 4}},
+        {content: 'DOING sub two', uuid: null, block_location: {line: 5}}],
+}), stderr: ''});
+await new Promise(resolve => setImmediate(resolve));
+assert(popupHud._popup, 'popup created');
+assert(uiGroup.children.includes(popupHud._popup), 'popup appended to uiGroup');
+const labels = popupHud._popup.children;
+assert.equal(labels[0].text, '• Project Alpha');
+assert.equal(labels[0].style_class, 'hud-preview-parent');
+assert.equal(labels[0].opacity, 150, 'parent is muted via actor opacity, not CSS');
+assert.equal(labels[1].text, '• TODO Ship the thing');
+assert.equal(labels[1].style_class, 'hud-preview-current');
+assert.equal(labels[2].text, '• TODO sub one');
+assert.equal(labels[2].style_class, 'hud-preview-child');
+assert.equal(labels[3].text, '• DOING sub two');
+
+// Positioned below the button and within the monitor.
+assert.equal(popupHud._popup._posX, 100);
+assert.equal(popupHud._popup._posY, 50 + 16 + 4);
+
+// Leaving dismisses the popup and cancels the (already-finished) request.
+previewButton.handlers['leave-event']();
+assert.equal(popupHud._popup, null, 'leave hides the popup');
+assert(popupHud._popup === null);
+
+// Off-screen clamping: a button near the right/bottom edges is pulled back in.
+previewButton._x = 1900; previewButton._y = 1070;
+cancelFlag = false;
+previewButton.handlers['enter-event']();
+[...popupTimers.values()][0].callback();
+completions.shift()({stdout: JSON.stringify({
+    graph: 'Fixture', graph_path: '/fixture', source_file: 'pages/project.md',
+    parent: [], current: {content: 'Edge', uuid: null, block_location: {line: 1}}, children: [],
+}), stderr: ''});
+await new Promise(resolve => setImmediate(resolve));
+assert(popupHud._popup._posX + 200 <= 1920, 'clamped within right edge');
+assert(popupHud._popup._posY + 120 <= 1080, 'flips above when it would overflow the bottom');
+previewButton.handlers['leave-event']();
+
+// Backend failure renders the error text instead of crashing.
+previewButton._x = 100; previewButton._y = 50;
+cancelFlag = false;
+previewButton.handlers['enter-event']();
+[...popupTimers.values()][0].callback();
+popupHud._popupProcess.success = false;
+completions.shift()({stdout: '', stderr: '{"error":"block not found: abc123"}', success: false});
+await new Promise(resolve => setImmediate(resolve));
+assert(popupHud._popup, 'error popup created');
+assert.equal(popupHud._popup.children[0].text, 'block not found: abc123');
+previewButton.handlers['leave-event']();
+
+// Disable cleans up any shown popup.
+cancelFlag = false;
+previewButton.handlers['enter-event']();
+[...popupTimers.values()][0].callback();
+completions.shift()({stdout: JSON.stringify({
+    graph: 'Fixture', graph_path: '/fixture', source_file: 'pages/project.md',
+    parent: [], current: {content: 'Edge', uuid: null, block_location: {line: 1}}, children: [],
+}), stderr: ''});
+await new Promise(resolve => setImmediate(resolve));
+assert(popupHud._popup, 'popup present before disable');
+popupHud.disable();
+assert.equal(popupHud._popup, null, 'disable tears down the popup');
+console.log('Block context popup tests passed');

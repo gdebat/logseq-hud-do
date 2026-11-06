@@ -17,6 +17,40 @@ export function backendArguments(directory, graphs, horizon) {
     return {args, directory};
 }
 
+// Build a one-shot backend invocation for a single block's context. The backend
+// prints a JSON object and exits; no persistent process or IPC channel exists
+// (requirements.md forbids a background service). The task already carries its
+// graph path, display name, source file and identity from the task list.
+export function blockContextArguments(directory, task) {
+    if (typeof task.graph_path !== 'string' || !task.graph_path.startsWith('/'))
+        throw new Error('Task is missing a graph directory.');
+    if (typeof task.source_file !== 'string' || !task.source_file ||
+        task.source_file.startsWith('/') || task.source_file.split('/').includes('..'))
+        throw new Error('Task is missing a valid source file.');
+    if (typeof task.id !== 'string' || !task.id)
+        throw new Error('Task is missing a block identity.');
+    const args = ['python3', '-m', 'logseq_hud_do',
+        `--graph=${task.graph_path}`, `--graph-name=${task.graph || task.graph_path.split('/').filter(Boolean).pop()}`,
+        '--block-context', task.source_file, task.id];
+    return {args, directory};
+}
+
+function validBlock(block) {
+    return block && typeof block === 'object' &&
+        typeof block.content === 'string' &&
+        (block.uuid === null || typeof block.uuid === 'string');
+}
+
+export function parseBlockContext(stdout) {
+    const data = JSON.parse(stdout);
+    if (!data || typeof data !== 'object' ||
+        !Array.isArray(data.parent) || !Array.isArray(data.children) ||
+        !validBlock(data.current) || !data.parent.every(validBlock) ||
+        !data.children.every(validBlock))
+        throw new Error('Invalid block context response.');
+    return {parent: data.parent, current: data.current, children: data.children};
+}
+
 export function parseTasks(stdout) {
     const data = JSON.parse(stdout);
     for (const section of sections) {

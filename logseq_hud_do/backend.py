@@ -139,6 +139,101 @@ def parse(text, graph, relative):
     return tasks
 
 
+def blocks(text):
+    """Yield one record per Logseq OG bullet block in source order.
+
+    Each record carries the block's indentation (tabs expanded to TAB_WIDTH),
+    the first content line, the accumulated multi-line content, any block UUID,
+    and the index of its parent block (nearest enclosing smaller indent) or
+    None. Fenced code and property lines follow the same rules as parse(): a
+    fence suspends block detection, and ``key:: value`` lines are metadata, not
+    content or children. This is the single source of truth for OG block
+    structure shared by task extraction and block-context lookup.
+    """
+    records, stack, fence = [], [], None
+    for number, line in enumerate(text.splitlines(), 1):
+        match = BLOCK.match(line)
+        body = match[2] if match else line.strip()
+        fence_match = re.match(r'(`{3,}|~{3,})', body)
+        if fence is not None:
+            if fence_match and fence_match[1][0] == fence[0] and len(fence_match[1]) >= len(fence):
+                fence = None
+            continue
+        if match:
+            indent = len(match[1].expandtabs(TAB_WIDTH))
+            while stack and records[stack[-1]]['indent'] >= indent:
+                stack.pop()
+            parent = stack[-1] if stack else None
+            records.append(dict(indent=indent, first=body, content=body,
+                                uuid=None, parent=parent, line=number))
+            stack.append(len(records) - 1)
+        elif stack and line.strip() and len(line[:len(line) - len(line.lstrip())].expandtabs(TAB_WIDTH)) <= records[stack[-1]]['indent']:
+            stack.clear()
+        if fence_match:
+            fence = fence_match[1]
+            continue
+        owner = records[stack[-1]] if stack else None
+        if owner is None:
+            continue
+        identifier = ID.match(line)
+        if identifier:
+            try:
+                owner['uuid'] = str(uuid.UUID(identifier[1]))
+            except ValueError:
+                pass
+        elif not match and not re.match(r'^\w+::', body):
+            owner['content'] += '\n' + body
+    return records
+
+
+def block_context(graph, relative, target, *, name=None):
+    """Return the parent chain, current block and direct children of a block.
+
+    ``target`` is the block identity the extension already holds: either a
+    stored UUID or the backend task-hash id. The source file is opened through
+    the same O_NOFOLLOW-hardened path as the scanner; Markdown is never
+    executed. Children are the immediate descendants only (one indent level
+    deeper), matching how Logseq shows direct child bullets.
+    """
+    with os.fdopen(open_source(graph, relative), 'r', encoding='utf-8') as source:
+        try:
+            text = source.read()
+        except UnicodeDecodeError as error:
+            raise ValueError(f'{graph}/{relative}: invalid UTF-8: {error}') from error
+    records = blocks(text)
+    graph_id = str(graph)
+    occurrences = {}
+    index = None
+    for position, record in enumerate(records):
+        task_match = TASK.match(record['first'])
+        hashed = None
+        if task_match:
+            status, content = task_match.groups()
+            key = status + '\0' + content
+            occurrences[key] = occurrences.get(key, 0) + 1
+            identity = '\0'.join((graph_id, relative, key, str(occurrences[key])))
+            hashed = hashlib.sha256(identity.encode()).hexdigest()
+        if target == record['uuid'] or target == (graph_id + ':' + record['uuid'] if record['uuid'] else None) or target == hashed:
+            index = position
+            break
+    if index is None:
+        raise ValueError(f'block not found: {target}')
+
+    def view(record):
+        return dict(content=record['content'], uuid=record['uuid'],
+                    block_location={'line': record['line']})
+
+    parents, cursor = [], records[index]['parent']
+    while cursor is not None:
+        parents.append(view(records[cursor]))
+        cursor = records[cursor]['parent']
+    parents.reverse()
+    children = [view(record) for record in records if record['parent'] == index]
+    return dict(graph=name or Path(graph).name, graph_path=graph_id,
+                source_file=relative, parent=parents,
+                current=view(records[index]), children=children)
+
+
 def discover(graph):
     files = {}
     for name in GRAPH_ROOTS:

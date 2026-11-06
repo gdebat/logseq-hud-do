@@ -9,7 +9,7 @@ import * as Dialog from 'resource:///org/gnome/shell/ui/dialog.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-import {backendArguments, parseTasks, taskPresentation, RefreshController, visibleTasks, hideTask} from './model.js';
+import {backendArguments, blockContextArguments, parseBlockContext, parseTasks, taskPresentation, RefreshController, visibleTasks, hideTask} from './model.js';
 
 export default class LogseqHudDo extends Extension {
     enable() {
@@ -196,18 +196,152 @@ export default class LogseqHudDo extends Extension {
             }
         });
         const container = new St.BoxLayout({x_expand: true, reactive: true, track_hover: true});
+        const preview = new St.Button({can_focus: true, accessible_name: 'Preview block context',
+            child: new St.Icon({icon_name: 'view-reveal-symbolic', icon_size: 16}), opacity: 0});
         const hide = new St.Button({can_focus: true, accessible_name: 'Hide task',
             child: new St.Icon({icon_name: 'view-conceal-symbolic', icon_size: 16}), opacity: 0});
-        const update = () => { hide.opacity = container.hover || hide.has_key_focus() || button.has_key_focus() ? 255 : 0; };
+        const update = () => {
+            const visible = container.hover || hide.has_key_focus() || preview.has_key_focus() || button.has_key_focus();
+            hide.opacity = preview.opacity = visible ? 255 : 0;
+        };
         container.connect('notify::hover', update);
-        for (const actor of [button, hide]) {
+        for (const actor of [button, preview, hide]) {
             actor.connect('key-focus-in', update);
             actor.connect('key-focus-out', update);
         }
         hide.connect('clicked', () => this._confirmHide(task));
+        this._bindPreview(preview, task);
         container.add_child(button);
+        container.add_child(preview);
         container.add_child(hide);
         this._rows.add_child(container);
+    }
+
+    // A 300ms debounce on enter-event avoids spawning the backend while the
+    // pointer merely crosses the button. leave-event cancels a pending timeout
+    // and dismisses any shown popup. The popup is a one-shot fetch; there is no
+    // persistent backend process.
+    _bindPreview(preview, task) {
+        let timeout = 0;
+        const cancel = () => {
+            if (timeout) {
+                GLib.Source.remove(timeout);
+                timeout = 0;
+            }
+        };
+        preview.connect('enter-event', () => {
+            cancel();
+            timeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 300, () => {
+                timeout = 0;
+                this._showPopup(preview, task);
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+        preview.connect('leave-event', () => {
+            cancel();
+            this._hidePopup();
+        });
+        preview.connect('destroy', () => {
+            cancel();
+            this._hidePopup();
+        });
+    }
+
+    _hidePopup() {
+        this._popupCancellable?.cancel();
+        this._popupCancellable = null;
+        this._popupProcess?.force_exit();
+        this._popupProcess = null;
+        this._popup?.destroy();
+        this._popup = null;
+    }
+
+    _showPopup(preview, task) {
+        this._hidePopup();
+        let args;
+        try {
+            ({args} = blockContextArguments(this.path, task));
+        } catch (error) {
+            this._renderPopup(preview, {error: error.message});
+            return;
+        }
+        const {directory} = backendArguments(this.path,
+            this._settings.get_value('graphs').deep_unpack(), this._settings.get_int('horizon'));
+        const launcher = new Gio.SubprocessLauncher({flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE});
+        launcher.set_cwd(directory);
+        launcher.setenv('PYTHONPATH', directory, true);
+        const process = launcher.spawnv(args);
+        this._popupProcess = process;
+        const cancellable = new Gio.Cancellable();
+        this._popupCancellable = cancellable;
+        process.communicate_utf8_async(null, cancellable, (source, result) => {
+            if (this._popupProcess === process)
+                this._popupProcess = null;
+            try {
+                const [, stdout, stderr] = source.communicate_utf8_finish(result);
+                if (!source.get_successful()) {
+                    let message = stderr.trim();
+                    try { message = JSON.parse(stderr).error; } catch (_error) { /* plain text */ }
+                    throw new Error(message || 'Backend failed.');
+                }
+                this._renderPopup(preview, {context: parseBlockContext(stdout)});
+            } catch (error) {
+                if (!cancellable.is_cancelled())
+                    this._renderPopup(preview, {error: error.message});
+            }
+        });
+    }
+
+    _renderPopup(preview, {context, error}) {
+        // Only render if this button's hover is still the active request.
+        if (this._popup)
+            this._popup.destroy();
+        const box = this._verticalBox();
+        box.style_class = 'hud-preview';
+        const addBlock = (block, cls, opacity) => {
+            const label = new St.Label({text: '• ' + block.content.split(/\r?\n/)[0], style_class: cls});
+            label.clutter_text.line_wrap = true;
+            label.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+            if (opacity !== undefined)
+                label.opacity = opacity;
+            box.add_child(label);
+        };
+        if (error) {
+            const label = new St.Label({text: error, style_class: 'hud-preview-block'});
+            label.clutter_text.line_wrap = true;
+            box.add_child(label);
+        } else {
+            for (const block of context.parent)
+                addBlock(block, 'hud-preview-parent', 150);
+            addBlock(context.current, 'hud-preview-current');
+            for (const block of context.children)
+                addBlock(block, 'hud-preview-child');
+        }
+        Main.layoutManager.uiGroup.add_child(box);
+        this._popup = box;
+        this._positionPopup(preview, box);
+    }
+
+    // Place the popup under the Preview button, then clamp to the primary
+    // monitor so it never renders off the bottom or the sides of the screen.
+    _positionPopup(preview, box) {
+        const extents = preview.get_transformed_extents();
+        const origin = extents.get_origin();
+        const size = extents.get_size();
+        const monitor = Main.layoutManager.primaryMonitor;
+        const [, natWidth] = box.get_preferred_width(-1);
+        const [, natHeight] = box.get_preferred_height(natWidth);
+        let x = origin.x;
+        let y = origin.y + size.height + 4;
+        if (x + natWidth > monitor.x + monitor.width)
+            x = monitor.x + monitor.width - natWidth;
+        if (x < monitor.x)
+            x = monitor.x;
+        if (y + natHeight > monitor.y + monitor.height)
+            y = origin.y - natHeight - 4;
+        if (y < monitor.y)
+            y = monitor.y;
+        box.set_position(Math.round(x), Math.round(y));
     }
 
     _confirmHide(task) {
@@ -237,6 +371,7 @@ export default class LogseqHudDo extends Extension {
     }
 
     disable() {
+        this._hidePopup();
         this._dialog?.destroy();
         this._dialog = null;
         this._controller.close();

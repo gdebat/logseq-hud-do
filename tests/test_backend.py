@@ -9,7 +9,9 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
-from logseq_hud_do.backend import parse, scan, journal_date
+from logseq_hud_do.backend import parse, scan, journal_date, block_context, blocks
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
 
 TODAY = dt.date(2026, 10, 31)
 
@@ -908,3 +910,125 @@ class BackendTests(unittest.TestCase):
             else:
                 os.environ['TZ'] = previous
             time.tzset()
+
+
+class BlockContextTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.graph = self.root / 'graph'
+        (self.graph / 'pages').mkdir(parents=True)
+
+    def write(self, relative, text):
+        (self.graph / relative).write_text(text)
+        return relative
+
+    FIXTURE = (
+        '- Project Alpha\n'
+        '\t- Milestones\n'
+        '\t\t- TODO Ship the thing\n'
+        '\t\t  id:: 5a3e0b2c-1111-2222-3333-444455556666\n'
+        '\t\t  SCHEDULED: <2026-11-06>\n'
+        '\t\t\t- TODO sub item one\n'
+        '\t\t\t- DOING sub item two\n'
+        '\t\t- a sibling note\n'
+        '\t- ```\n'
+        '\t  - not a bullet inside fence\n'
+        '\t  ```\n'
+    )
+
+    def test_blocks_agree_with_parse_on_structure(self):
+        # The shared walker must see the same task blocks the extractor emits.
+        relative = 'pages/project.md'
+        records = blocks(self.FIXTURE)
+        tasks = parse(self.FIXTURE, 'g', relative)
+        import re
+        tasklike = re.compile(r'(TODO|DOING)(?:\s+|$)')
+        first_lines = [r['first'] for r in records if tasklike.match(r['first'])]
+        self.assertEqual(first_lines,
+                         ['TODO Ship the thing', 'TODO sub item one', 'DOING sub item two'])
+        self.assertEqual(len(tasks), 3)
+        # The fence opener is itself a block (matching parse); its inner line is not.
+        self.assertIn('```', first_lines_all := [r['first'] for r in records])
+        self.assertNotIn('not a bullet inside fence', first_lines_all)
+
+    def test_context_hierarchy_children_and_own_content(self):
+        relative = self.write('pages/project.md', self.FIXTURE)
+        context = block_context(self.graph, relative,
+                                '5a3e0b2c-1111-2222-3333-444455556666', name='Work')
+        self.assertEqual(context['graph'], 'Work')
+        self.assertEqual(context['source_file'], relative)
+        self.assertEqual([p['content'] for p in context['parent']],
+                         ['Project Alpha', 'Milestones'])
+        # SCHEDULED stays with the owning block, not a child.
+        self.assertEqual(context['current']['content'],
+                         'TODO Ship the thing\nSCHEDULED: <2026-11-06>')
+        self.assertEqual(context['current']['uuid'],
+                         '5a3e0b2c-1111-2222-3333-444455556666')
+        # Direct children only; the sibling note and fenced bullet are excluded.
+        self.assertEqual([c['content'] for c in context['children']],
+                         ['TODO sub item one', 'DOING sub item two'])
+
+    def test_context_lookup_by_graph_uuid_and_hash(self):
+        relative = self.write('pages/project.md', self.FIXTURE)
+        graph_id = str(self.graph)
+        for target in (f'{graph_id}:5a3e0b2c-1111-2222-3333-444455556666',):
+            context = block_context(self.graph, relative, target)
+            self.assertEqual(context['current']['uuid'],
+                             '5a3e0b2c-1111-2222-3333-444455556666')
+        # A task without id:: is addressable by its backend hash identity.
+        hashed = parse(self.FIXTURE, graph_id, relative)
+        plain = next(t for t in hashed if t['block_uuid'] is None)
+        context = block_context(self.graph, relative, plain['id'])
+        # block_context keeps the TODO/DOING marker; parse strips it into status.
+        self.assertEqual(context['current']['content'].splitlines()[0],
+                         f"{plain['status']} {plain['content'].splitlines()[0]}")
+
+    def test_context_missing_block_raises(self):
+        relative = self.write('pages/project.md', self.FIXTURE)
+        with self.assertRaisesRegex(ValueError, 'block not found'):
+            block_context(self.graph, relative, 'does-not-exist')
+
+    def test_context_refuses_symlinked_source(self):
+        target = self.write('pages/real.md', self.FIXTURE)
+        link = self.graph / 'pages' / 'link.md'
+        link.symlink_to(self.graph / target)
+        with self.assertRaises(OSError):
+            block_context(self.graph, 'pages/link.md',
+                          '5a3e0b2c-1111-2222-3333-444455556666')
+
+    def test_cli_block_context_roundtrip(self):
+        relative = self.write('pages/project.md', self.FIXTURE)
+        result = subprocess.run(
+            [sys.executable, '-m', 'logseq_hud_do', f'--graph={self.graph}',
+             '--graph-name=Work', '--block-context', relative,
+             '5a3e0b2c-1111-2222-3333-444455556666'],
+            capture_output=True, text=True, cwd=ROOT_DIR)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual([c['content'] for c in payload['children']],
+                         ['TODO sub item one', 'DOING sub item two'])
+        self.assertEqual(payload['current']['uuid'],
+                         '5a3e0b2c-1111-2222-3333-444455556666')
+
+    def test_cli_block_context_error_channel(self):
+        relative = self.write('pages/project.md', self.FIXTURE)
+        result = subprocess.run(
+            [sys.executable, '-m', 'logseq_hud_do', f'--graph={self.graph}',
+             '--block-context', relative, 'missing'],
+            capture_output=True, text=True, cwd=ROOT_DIR)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, '')
+        self.assertEqual(json.loads(result.stderr)['error'], 'block not found: missing')
+
+    def test_cli_block_context_rejects_multiple_graphs(self):
+        relative = self.write('pages/project.md', self.FIXTURE)
+        other = self.root / 'other'
+        (other / 'pages').mkdir(parents=True)
+        result = subprocess.run(
+            [sys.executable, '-m', 'logseq_hud_do', f'--graph={self.graph}',
+             f'--graph={other}', '--block-context', relative, 'x'],
+            capture_output=True, text=True, cwd=ROOT_DIR)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('exactly one', json.loads(result.stderr)['error'])

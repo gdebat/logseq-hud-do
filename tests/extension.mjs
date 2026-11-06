@@ -1,4 +1,4 @@
-import {displayContent, compileTextFilter, backendArguments, parseTasks, taskPresentation, RefreshController, sections, logicalIdentity, hideTask, visibleTasks, readHidden, writeHidden, unhideTask} from '../extension/model.js';
+import {displayContent, compileTextFilter, backendArguments, blockContextArguments, parseBlockContext, parseTasks, taskPresentation, RefreshController, sections, logicalIdentity, hideTask, visibleTasks, readHidden, writeHidden, unhideTask} from '../extension/model.js';
 
 function assert(value, message) {
     if (!value)
@@ -102,6 +102,48 @@ for (const pattern of ['[', '^(a+)+$', '^.*.*x', '^a?', '^a{2}', '^a|b', '^\\1',
     equal(displayContent('Keep text', [pattern]), 'Keep text');
 }
 equal(displayContent('[#A] Task\nrelay-id:: abc'), 'Task');
+
+// Block context: one-shot command construction from an existing task.
+const ctxTask = {graph_path: '/graphs/work', graph: 'Work', source_file: 'pages/project.md', id: 'abc123'};
+equal(blockContextArguments('/extension', ctxTask).args,
+    ['python3', '-m', 'logseq_hud_do', '--graph=/graphs/work', '--graph-name=Work',
+        '--block-context', 'pages/project.md', 'abc123']);
+// Display name falls back to the graph directory basename.
+equal(blockContextArguments('/extension', {...ctxTask, graph: ''}).args[4], '--graph-name=work');
+for (const bad of [
+    {...ctxTask, graph_path: 'relative'},
+    {...ctxTask, graph_path: '/graphs/work', source_file: '/etc/passwd'},
+    {...ctxTask, source_file: '../escape.md'},
+    {...ctxTask, source_file: ''},
+    {...ctxTask, id: ''},
+]) {
+    let refused = false;
+    try { blockContextArguments('/extension', bad); } catch { refused = true; }
+    assert(refused, `unsafe block-context task accepted: ${JSON.stringify(bad)}`);
+}
+// Response parsing and validation.
+const ctxResponse = JSON.stringify({
+    graph: 'Work', graph_path: '/graphs/work', source_file: 'pages/project.md',
+    parent: [{content: 'Project', uuid: null, block_location: {line: 1}}],
+    current: {content: 'TODO Ship', uuid: 'u', block_location: {line: 2}},
+    children: [{content: 'sub', uuid: null, block_location: {line: 3}}],
+});
+const parsedCtx = parseBlockContext(ctxResponse);
+equal(parsedCtx.parent.map(b => b.content), ['Project']);
+equal(parsedCtx.current.content, 'TODO Ship');
+equal(parsedCtx.children.map(b => b.content), ['sub']);
+for (const invalid of [
+    '{}',
+    '{"parent":[],"children":[],"current":null}',
+    '{"parent":null,"children":[],"current":{"content":"x","uuid":null}}',
+    '{"parent":[],"children":[{"uuid":1}],"current":{"content":"x","uuid":null}}',
+    '{"parent":[{"content":5}],"children":[],"current":{"content":"x","uuid":null}}',
+]) {
+    let rejected = false;
+    try { parseBlockContext(invalid); } catch { rejected = true; }
+    assert(rejected, `invalid block context accepted: ${invalid}`);
+}
+print('Block context model tests passed');
 
 for (const [scheduled, expected] of [[null, 'Personal'], ['2026-10-31', 'Personal · 31 Oct 2026'], ['2026-11-04', 'Personal · 4 Nov 2026']]) {
     const original = {...task, scheduled, journal_date: '2026-10-31', deadline: '2026-12-25',
