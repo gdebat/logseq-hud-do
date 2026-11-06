@@ -130,6 +130,52 @@ hud._render();
 assert.deepEqual(headings(), ['Today (1)', 'Today — Unscheduled (2)', 'Overdue (1)', 'Upcoming (1)']);
 assert.deepEqual(rendered, [scheduled, ...unscheduled, overdue, upcoming]);
 assert.equal(hud._count.text, '3');
+
+// --- Section separators (#9) -----------------------------------------------
+// While _addTask is stubbed, _rows holds only headings and separators, so the
+// structure can be asserted directly. Separators sit strictly between adjacent
+// populated sections: one fewer than the number of sections.
+const classesOf = () => hud._rows.children.map(child => child.style_class);
+const isSep = cls => cls === 'hud-separator';
+{
+    const classes = classesOf();
+    const headingCount = classes.filter(c => c === 'hud-heading').length;
+    const sepCount = classes.filter(isSep).length;
+    assert.equal(headingCount, 4);
+    assert.equal(sepCount, 3, 'one separator between each of four sections');
+    // Never first or last.
+    assert(!isSep(classes[0]), 'no orphaned separator at the top');
+    assert(!isSep(classes[classes.length - 1]), 'no trailing separator');
+    // Never two in a row, and every separator is flanked by headings.
+    for (let i = 0; i < classes.length; i++) {
+        if (isSep(classes[i])) {
+            assert(!isSep(classes[i - 1]) && !isSep(classes[i + 1]), 'no consecutive separators');
+            assert.equal(classes[i - 1], 'hud-heading');
+            assert.equal(classes[i + 1], 'hud-heading');
+        }
+    }
+}
+// A gap in the middle (empty section) must not double or orphan separators.
+hud._data = {today: [scheduled], overdue: [], upcoming: [upcoming]};
+hud._render();
+assert.deepEqual(classesOf(), ['hud-heading', 'hud-separator', 'hud-heading'],
+    'two populated sections -> single separator between them');
+// A single populated section has no separators at all.
+hud._data = {today: [scheduled], overdue: [], upcoming: []};
+hud._render();
+assert.equal(classesOf().filter(isSep).length, 0, 'single section has no separators');
+assert(!isSep(classesOf()[0]), 'single section does not start with a separator');
+// Disabled (not merely empty) sections are also skipped without stray separators.
+hud._data = {today: [scheduled], overdue: [overdue], upcoming: [upcoming]};
+values['show-overdue'] = false;
+hud._render();
+assert.deepEqual(classesOf(), ['hud-heading', 'hud-separator', 'hud-heading'],
+    'a disabled middle section yields exactly one separator between the two shown');
+values['show-overdue'] = true;
+// Restore the four-section fixture for the assertions that follow.
+hud._data = {today: [unscheduled[0], scheduled, unscheduled[1]], overdue: [overdue], upcoming: [upcoming]};
+hud._render();
+assert.deepEqual(headings(), ['Today (1)', 'Today — Unscheduled (2)', 'Overdue (1)', 'Upcoming (1)']);
 const savedRegistry = registry;
 const savedTimers = [...timers.keys()];
 const refresh = hud._controller.refresh;
