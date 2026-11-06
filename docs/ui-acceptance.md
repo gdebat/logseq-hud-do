@@ -11,6 +11,13 @@ click activation and actor hover tracking. Headings and section boxes are plain
 St actors. Individual task buttons retain their scoped hover/focus CSS.
 See [Shell's PopupBaseMenuItem implementation](https://github.com/GNOME/gnome-shell/blob/gnome-46/js/ui/popupMenu.js).
 
+A thin `hud-separator` St.Widget divides adjacent populated sections. Because the
+render loop skips empty or disabled sections and only emits a separator before a
+heading once an earlier section has been rendered, there is never a separator at
+the top or bottom of the list, and never two in a row when a section is empty.
+The divider uses a theme-neutral translucent line with vertical margin rather
+than hardcoded hex, so it reads correctly under light and dark Shell themes.
+
 Preferences provides editable/removable line filters in `task-text-filters`.
 A matching line is removed in presentation only, before existing priority marker
 removal. The default `^[ \t]*relay-id::` removes indented relay properties.

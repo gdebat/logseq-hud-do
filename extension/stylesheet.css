@@ -1,5 +1,6 @@
 .hud-scroll { width: 28em; max-height: 32em; }
 .hud-heading { font-weight: bold; padding: 10px 8px 4px; }
+.hud-separator { height: 1px; margin: 8px 8px; background-color: rgba(127, 127, 127, 0.3); }
 .hud-task { padding: 6px 8px; border-radius: 6px; text-align: left; }
 .hud-task:hover, .hud-task:focus { background-color: rgba(127, 127, 127, 0.2); }
 .hud-context { font-size: 0.85em; padding: 2px 8px; }

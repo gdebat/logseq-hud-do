@@ -1,6 +1,6 @@
 # Logseq HUD->Do
 
-![Logo](./docs/images/logo.png)
+![Logo](./assets/images/logo.png)
 
 [![CI](https://github.com/gdebat/logseq-hud-do/actions/workflows/ci.yml/badge.svg)](https://github.com/gdebat/logseq-hud-do/actions/workflows/ci.yml)
 
@@ -11,7 +11,7 @@ A native GNOME Shell 46–50 indicator with an offline, read-only Python backend
 The backend requires Python 3.10+ on Linux with no third-party Python dependencies.
 The extension bundles the existing backend; no permanent service is installed.
 
-![Screenshot](./docs/images/screenshot.png)
+![Screenshot](./assets/images/screenshot.png)
 
 ## TL;DR
 1.  ```sh
