@@ -140,6 +140,7 @@ export default class LogseqHudDo extends Extension {
         this._count.text = this._settings.get_boolean('show-today-count')
             ? String(scheduledToday.length + unscheduledToday.length) : '';
         this._rows.destroy_all_children();
+        let rendered = 0;
         for (const [title, tasks, enabled] of [
             ['Today', scheduledToday, true],
             ['Today — Unscheduled', unscheduledToday, true],
@@ -148,9 +149,14 @@ export default class LogseqHudDo extends Extension {
         ]) {
             if (!enabled || !tasks.length)
                 continue;
+            // A divider only between populated sections: never at the top, never
+            // trailing, and never doubled because empty sections are skipped above.
+            if (rendered)
+                this._rows.add_child(new St.Widget({style_class: 'hud-separator', x_expand: true}));
             this._rows.add_child(new St.Label({text: `${title} (${tasks.length})`, style_class: 'hud-heading'}));
             for (const task of tasks)
                 this._addTask(task);
+            rendered++;
         }
     }
 
