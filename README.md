@@ -160,7 +160,12 @@ Directories must contain non-symlink pages/ or journals/. The backend validates 
 again on every refresh. Missing or unreadable graphs display an error rather
 than stale tasks; correct the directory and select Refresh.
 
-The scrollable dropdown preserves backend order within Today, Today — Unscheduled, Overdue and Upcoming.
+The scrollable dropdown preserves backend order except for optional Priority A
+promotion in scheduled Today. **Prioritize today's high priority tasks (#A)** defaults
+to enabled: all A tasks appear first (DOING before TODO), followed by non-A tasks
+in their original status/priority/source order. Disabling it restores backend order
+exactly. Toggling immediately reorders loaded tasks without a backend scan and persists
+through GSettings. Today — Unscheduled, Overdue and Upcoming retain backend order.
 Only DOING gets a status badge. Priority badges are High (red), Medium (amber),
 Low (blue); absent priorities have no badge. Text is displayed literally.
 Preferences provide independent line regex and multiline block filters for displayed

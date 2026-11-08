@@ -150,7 +150,7 @@ Sort each category independently.
 3. C — Low
 4. No priority
 
-Task status always takes precedence over priority.
+In the backend's base order, task status takes precedence over priority.
 
 ### Tertiary
 
@@ -160,7 +160,15 @@ Task status always takes precedence over priority.
 
 Use stable identifiers or source locations as final tie-breakers.
 
-All sorting must be performed by the backend.
+The backend owns the base sorting above. The extension additionally provides
+**Prioritize today's high priority tasks (#A)**, enabled by default and persisted
+through GSettings. In the scheduled Today section only, promote all A tasks before
+non-A tasks while preserving backend order within both groups. This puts DOING A
+before TODO A, followed by non-A DOING and then non-A TODO, with B/C/no priority
+and existing deterministic tie-breaks retained. Disabling restores the original order
+exactly. Changes immediately reorder loaded tasks without a backend scan.
+Today — Unscheduled, Overdue and Upcoming are unaffected, as are filtering, hiding,
+counts, badges and navigation. Backend JSON ordering and caching remain unchanged.
 
 ## 6. Phase 1 — High-Performance Backend
 

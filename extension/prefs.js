@@ -200,12 +200,16 @@ export default class Preferences extends ExtensionPreferences {
             settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
             refresh.add(row);
         }
-        for (const [key, title] of [
+        for (const [key, title, subtitle] of [
+            ['today-priority-a-first', "Prioritize today's high priority tasks (#A)",
+                'Show Priority A tasks first in Today, regardless of TODO or DOING status.'],
             ['show-today-unscheduled', "Show today's unscheduled tasks"],
             ['show-overdue', 'Show Overdue'], ['show-upcoming', 'Show Upcoming'],
             ['show-today-count', 'Show Today count in panel'],
         ]) {
             const row = new Adw.SwitchRow({title});
+            if (subtitle)
+                row.subtitle = subtitle;
             settings.bind(key, row, 'active', Gio.SettingsBindFlags.DEFAULT);
             refresh.add(row);
         }

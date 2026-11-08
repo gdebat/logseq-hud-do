@@ -27,7 +27,7 @@ const settings = {
     get_value: key => ({deep_unpack: () => key === 'task-block-filters' ? defaultBlockFilters : []}),
     set_value: (key, value) => { if (key === 'task-block-filters') settings.blocks = value.value; else saved++; },
     settings_schema: {get_key: key => ({get_range: () => ({deep_unpack: () => ['range', {deep_unpack: () => ranges[key]}]})})},
-    bind: (key, row) => bindings.push([key, row]),
+    bind: (key, row, property) => bindings.push([key, row, property]),
 };
 const context = vm.createContext({
     TextDecoder, compileTextFilter, readHidden, writeHidden, unhideTask,
@@ -193,3 +193,8 @@ const unscheduledBinding = bindings.find(([key]) => key === 'show-today-unschedu
 assert(unscheduledBinding);
 assert.equal(unscheduledBinding[1].title, "Show today's unscheduled tasks");
 assert.match(xml, /<key name="show-today-unscheduled" type="b"><default>true<\/default>/);
+const priorityBinding = bindings.find(([key]) => key === 'today-priority-a-first');
+assert(priorityBinding);
+assert.equal(priorityBinding[1].title, "Prioritize today's high priority tasks (#A)");
+assert.equal(priorityBinding[1].subtitle, 'Show Priority A tasks first in Today, regardless of TODO or DOING status.');
+assert.equal(priorityBinding[2], 'active');

@@ -106,7 +106,9 @@
   Deadlines do not drive classification; do not expand recurring schedules.
 - Backend sorts each category: DOING before TODO, A/B/C/no priority, then scheduled
   date ascending for Overdue/Upcoming, then graph display name, source path, line, ID.
-  Today omits the date sort key. The extension preserves the resulting order.
+  Today omits the date sort key. The extension preserves this order except for the
+  optional, default-enabled stable A-first partition of scheduled Today; disabling
+  `today-priority-a-first` restores backend order without rescanning.
 - UI sections are Today, Today — Unscheduled, Overdue, Upcoming; omit empty/disabled
   sections and put separators only between populated sections. After hidden filtering,
   use the same preference-dependent Today arrays for rows and the panel count.
