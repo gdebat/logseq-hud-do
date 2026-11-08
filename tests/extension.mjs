@@ -1,4 +1,4 @@
-import {displayContent, compileTextFilter, backendArguments, blockContextArguments, parseBlockContext, parseTasks, taskPresentation, RefreshController, sections, logicalIdentity, hideTask, visibleTasks, readHidden, writeHidden, unhideTask} from '../extension/model.js';
+import {displayContent, compileTextFilter, backendArguments, blockContextArguments, parseBlockContext, parseTasks, taskPresentation, RefreshController, sections, logicalIdentity, hideTask, visibleTasks, readHidden, writeHidden, unhideTask, sortTodayTasks} from '../extension/model.js';
 
 function assert(value, message) {
     if (!value)
@@ -9,6 +9,22 @@ function equal(actual, expected) {
 }
 const task = {content: '<b>Literal</b>', graph: 'Personal', graph_path: '/graphs/personal', source_page: 'Page', status: 'TODO', priority: null, scheduled: null, deep_link: 'logseq://graph/Personal?page=Page'};
 equal(sections, ['today', 'overdue', 'upcoming']);
+const backendOrder = ['DOING', 'TODO'].flatMap(status => ['A', 'B', 'C', null]
+    .map(priority => Object.freeze({...task, status, priority})));
+Object.freeze(backendOrder);
+equal(sortTodayTasks(backendOrder, false), backendOrder);
+equal(sortTodayTasks(backendOrder, true).map(task => [task.status, task.priority]), [
+    ['DOING', 'A'], ['TODO', 'A'], ['DOING', 'B'], ['DOING', 'C'], ['DOING', null],
+    ['TODO', 'B'], ['TODO', 'C'], ['TODO', null],
+]);
+equal(sortTodayTasks(backendOrder, false), backendOrder);
+for (const enabled of [false, true]) {
+    equal(sortTodayTasks([], enabled), []);
+    // Missing priority/source metadata is safe: partition never reads tie fields.
+    const missing = {status: 'DOING'};
+    equal(sortTodayTasks([missing, {priority: 'A'}], enabled),
+        enabled ? [{priority: 'A'}, missing] : [missing, {priority: 'A'}]);
+}
 const data = {today: [task, {...task, status: 'DOING'}], overdue: [], upcoming: []};
 equal(parseTasks(JSON.stringify(data)), data);
 assert(taskPresentation(task).doing === false, 'TODO has no badge');

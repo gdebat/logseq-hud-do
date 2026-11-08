@@ -47,6 +47,13 @@ On GNOME 46–50 with light and dark Shell themes:
 5. Compare backend JSON/cache with display filtering enabled and disabled: IDs,
    descriptions, grouping, sorting and links must remain unchanged. Do not edit
    graph files for acceptance.
+6. In disposable graphs, include scheduled A TODO, A DOING, and B/C/unprioritized
+   TODO/DOING tasks across multiple graphs. With “Prioritize today's high priority
+   tasks (#A)” enabled (the default), verify A DOING, A TODO, then remaining DOING
+   and TODO groups, each B/C/no priority. Disable it and verify original backend
+   order; toggle repeatedly with the dropdown open and confirm immediate updates.
+   Confirm Today — Unscheduled, Overdue, Upcoming, counts, hiding, badges and links
+   are unchanged. Restart the extension and Preferences and confirm persistence.
 
 Automated widget doubles cannot establish live Shell rendering, contrast or
 pointer delivery. These visual and interaction checks remain manual acceptance.

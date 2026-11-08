@@ -10,7 +10,7 @@ import * as Dialog from 'resource:///org/gnome/shell/ui/dialog.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-import {backendArguments, blockContextArguments, parseBlockContext, parseTasks, taskPresentation, RefreshController, visibleTasks, hideTask} from './model.js';
+import {backendArguments, blockContextArguments, parseBlockContext, parseTasks, taskPresentation, RefreshController, visibleTasks, hideTask, sortTodayTasks} from './model.js';
 
 export default class LogseqHudDo extends Extension {
     enable() {
@@ -50,7 +50,7 @@ export default class LogseqHudDo extends Extension {
                 this._hidePopup();
         });
         this._settingsSignal = this._settings.connect('changed', (_settings, key) => {
-            if (key === 'hidden-tasks-v2' || key === 'show-today-unscheduled') {
+            if (key === 'hidden-tasks-v2' || key === 'show-today-unscheduled' || key === 'today-priority-a-first') {
                 this._render();
                 return;
             }
@@ -136,7 +136,8 @@ export default class LogseqHudDo extends Extension {
         if (!this._data)
             return;
         const data = visibleTasks(this._data, this._settings);
-        const scheduledToday = data.today.filter(task => task.scheduled !== null);
+        const scheduledToday = sortTodayTasks(data.today.filter(task => task.scheduled !== null),
+            this._settings.get_boolean('today-priority-a-first'));
         const unscheduledToday = this._settings.get_boolean('show-today-unscheduled')
             ? data.today.filter(task => task.scheduled === null) : [];
         this._message.hide();

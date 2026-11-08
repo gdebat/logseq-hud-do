@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {defaultTextFilters, defaultBlockFilters, sections, taskPresentation, RefreshController, backendArguments, blockContextArguments, parseBlockContext, parseTasks, visibleTasks, hideTask} from '../extension/model.js';
+import {defaultTextFilters, defaultBlockFilters, sections, taskPresentation, RefreshController, backendArguments, blockContextArguments, parseBlockContext, parseTasks, visibleTasks, hideTask, sortTodayTasks} from '../extension/model.js';
 
 class Actor {
     constructor(props = {}) { Object.assign(this, props); this.children = []; this.clutter_text = {}; this.handlers = {}; }
@@ -33,7 +33,7 @@ class Menu extends Actor {
 }
 class Indicator extends Actor { constructor() { super(); this.menu = new Menu(); } }
 class Item extends Actor { constructor(text) { super(); this.label = new Actor({text}); } }
-const values = {'refresh-interval': 30, horizon: 7, 'show-today-unscheduled': true, 'show-overdue': true, 'show-upcoming': true, 'show-today-count': true};
+const values = {'refresh-interval': 30, horizon: 7, 'today-priority-a-first': true, 'show-today-unscheduled': true, 'show-overdue': true, 'show-upcoming': true, 'show-today-count': true};
 const settings = new Actor();
 let registry = '{"version":2,"tasks":[]}';
 settings.get_string = () => registry;
@@ -47,7 +47,7 @@ let timerId = 0;
 const now = {add_days: () => now, get_year: () => 2026, get_month: () => 11, get_day_of_month: () => 1, difference: () => 10000000};
 const St = {BoxLayout: Actor, Widget: Actor, Icon: Actor, Label: Actor, ScrollView: Actor, Button: class extends Actor {}, PolicyType: {NEVER: 0, AUTOMATIC: 1}};
 const context = vm.createContext({
-    St, sections, taskPresentation, RefreshController, backendArguments, blockContextArguments, parseBlockContext, parseTasks, visibleTasks, hideTask,
+    St, sections, taskPresentation, RefreshController, backendArguments, blockContextArguments, parseBlockContext, parseTasks, visibleTasks, hideTask, sortTodayTasks,
     Extension: class { getSettings() { return settings; } },
     Clutter: {KEY_Escape: 65307, ActorAlign: {CENTER: 0}}, Pango: {EllipsizeMode: {NONE: 0}, WrapMode: {WORD_CHAR: 2}},
     PanelMenu: {Button: Indicator},
@@ -225,6 +225,41 @@ for (const enabled of [false, true]) {
         }
     }
 }
+// Priority A promotion is confined to scheduled Today and uses loaded data.
+const doingB = {...scheduled, content: 'Doing B', status: 'DOING', priority: 'B'};
+const todoA = {...scheduled, content: 'Todo A', priority: 'A'};
+const unscheduledA = {...unscheduled[0], content: 'Unscheduled A', priority: 'A'};
+const otherSections = [
+    {...overdue, status: 'DOING', priority: 'B'}, {...overdue, content: 'Overdue A', priority: 'A'},
+    {...upcoming, status: 'DOING', priority: 'B'}, {...upcoming, content: 'Upcoming A', priority: 'A'},
+];
+const priorityData = {today: [doingB, unscheduled[0], todoA, unscheduledA],
+    overdue: otherSections.slice(0, 2), upcoming: otherSections.slice(2)};
+hud._data = priorityData;
+values['show-today-unscheduled'] = true;
+const prioritySnapshot = JSON.stringify(priorityData);
+const priorityTimers = [...timers.keys()];
+hud._controller.refresh = () => assert.fail('Priority ordering must not scan');
+for (const enabled of [false, true, false, true]) {
+    values['today-priority-a-first'] = enabled;
+    rendered.length = 0;
+    settings.handlers.changed(settings, 'today-priority-a-first');
+    assert.deepEqual(rendered, [...(enabled ? [todoA, doingB] : [doingB, todoA]),
+        unscheduled[0], unscheduledA, ...otherSections]);
+    assert.equal(hud._count.text, '4');
+    assert.equal(JSON.stringify(hud._data), prioritySnapshot);
+    assert.deepEqual([...timers.keys()], priorityTimers);
+}
+hideTask(settings, todoA);
+for (const enabled of [false, true]) {
+    values['today-priority-a-first'] = enabled;
+    rendered.length = 0;
+    settings.handlers.changed(settings, 'today-priority-a-first');
+    assert.deepEqual(rendered, [doingB, unscheduled[0], unscheduledA, ...otherSections]);
+    assert.equal(hud._count.text, '3');
+}
+settings.set_string('hidden-tasks-v2', savedRegistry);
+hud._controller.refresh = refresh;
 hud._data = {today: [], overdue: [], upcoming: []};
 hud._render();
 assert.equal(hud._rows.children.length, 0);

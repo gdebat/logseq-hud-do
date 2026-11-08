@@ -5,6 +5,15 @@ export const priorities = {A: ['High', 'high'], B: ['Medium', 'medium'], C: ['Lo
 const priorityMarker = new RegExp(`\\[#(?:${Object.keys(priorities).join('|')})\\]`, 'g');
 export const hiddenRegistryVersion = 2;
 
+// Input retains backend order: status, priority, graph, path, line, ID.
+// A stable partition preserves that comparator within A and non-A groups.
+export function sortTodayTasks(tasks, priorityAFirst) {
+    if (!priorityAFirst)
+        return tasks;
+    return tasks.filter(task => task.priority === 'A')
+        .concat(tasks.filter(task => task.priority !== 'A'));
+}
+
 export function backendArguments(directory, graphs, horizon) {
     if (!graphs.length)
         throw new Error('Add a Logseq graph in Preferences.');

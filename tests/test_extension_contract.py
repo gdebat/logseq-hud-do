@@ -7,12 +7,61 @@ import subprocess
 import tempfile
 import unittest
 
-from logseq_hud_do.backend import scan, STATUSES, PRIORITIES, GRAPH_ROOTS
+from logseq_hud_do.backend import scan, classify, STATUSES, PRIORITIES, GRAPH_ROOTS
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class ContractTests(unittest.TestCase):
+    def test_today_priority_order_preserves_backend_ties(self):
+        # Exercise the producer comparator, including ties through the final ID.
+        tasks = []
+        for status in ('DOING', 'TODO'):
+            for priority in ('A', 'B', 'C', None):
+                for graph in ('Alpha', 'Zeta', 'é', '😀'):
+                    for path in ('pages/a.md', 'pages/z.md'):
+                        for line in (2, 10):
+                            for suffix in ('a', 'z'):
+                                tasks.append(dict(id=f'{status}/{priority}/{graph}/{path}/{line}/{suffix}',
+                                    status=status, priority=priority, graph=graph, source_file=path,
+                                    block_location={'line': line}, scheduled='2026-11-08'))
+        original = classify(list(reversed(tasks)), dt.date(2026, 11, 8), 7)['today']
+        self.assertEqual(original, tasks)
+        script = """
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import {sortTodayTasks} from './extension/model.js';
+const tasks = JSON.parse(fs.readFileSync(0, 'utf8'));
+const before = JSON.stringify(tasks);
+const enabled = sortTodayTasks(tasks, true);
+assert.equal(JSON.stringify(tasks), before);
+assert.deepEqual(sortTodayTasks(tasks, false), tasks);
+assert.deepEqual(sortTodayTasks(enabled, true), enabled);
+console.log(JSON.stringify(enabled.map(task => task.id)));
+"""
+        result = subprocess.run(['node', '--input-type=module', '-e', script],
+            input=json.dumps(original), capture_output=True, text=True, check=True, cwd=ROOT)
+        expected = [task['id'] for task in tasks if task['priority'] == 'A']
+        expected += [task['id'] for task in tasks if task['priority'] != 'A']
+        self.assertEqual(json.loads(result.stdout), expected)
+
+    def test_today_priority_preference_persists_between_processes(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            shutil.copy(next((ROOT / 'extension/schemas').glob('*.xml')), tmp)
+            subprocess.run(['glib-compile-schemas', '--strict', tmp], check=True)
+            env = dict(os.environ, GSETTINGS_SCHEMA_DIR=tmp, GSETTINGS_BACKEND='keyfile',
+                       XDG_CONFIG_HOME=tmp)
+            def setting(*args):
+                return subprocess.run(['gsettings', *args], env=env, check=True,
+                    capture_output=True, text=True).stdout.strip()
+            schema = 'org.gnome.shell.extensions.logseq-hud-do'
+            key = 'today-priority-a-first'
+            self.assertEqual(setting('get', schema, key), 'true')
+            for value in ('false', 'true'):
+                setting('set', schema, key, value)
+                self.assertEqual(setting('get', schema, key), value)
+
     def test_preview_titles_and_real_ancestor_context_reach_ui(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
