@@ -147,8 +147,12 @@ gnome-extensions enable logseq-hud-do@local
 gnome-extensions prefs logseq-hud-do@local
 ```
 
-Add each graph by absolute directory path and an optional display name. To change
-an existing path or name, remove that entry and add it again. Preferences also
+Add each graph by typing its absolute directory path or selecting **Browse…**
+beside the editable path field. Choosing a folder replaces the pending path and
+fills a blank display name with the folder name; an existing display name is kept.
+Both fields remain editable. Select **Add** to validate and save the graph;
+cancelling the chooser leaves the form unchanged. To change an existing path or
+name, remove that entry and add it again. Preferences also
 control refresh seconds (default 30), upcoming days (default 7), Overdue/Upcoming
 visibility, today's unscheduled task visibility (enabled by default), and the panel
 Today count. Scheduled tasks appear in Today; unscheduled tasks from today's

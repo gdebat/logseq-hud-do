@@ -25,3 +25,39 @@ handler and missing handler, periodic/manual/open/settings/midnight refresh,
 errors and disable during subprocess work. Use only disposable graphs.
 Automated CSS checks verify badge contrast >= 4.5:1 and inherited ordinary text;
 they cannot prove Shell theme rendering, layout or accessibility in a session.
+
+## Graph directory chooser API compatibility
+
+The chooser uses the GTK 4 `Gtk.FileChooserNative` API with `SELECT_FOLDER`,
+`get_file()`, explicit single selection, modal parenting, disabled folder creation,
+and owned response/disconnect/destroy cleanup. Preferences closes the chooser on
+`close-request` and `unrealize`; callbacks from obsolete choosers are ignored.
+There are no Shell private API imports or major-version branches in this path.
+`FileChooserNative` is deprecated since GTK 4.10 but remains available in all
+five GTK release snapshots checked below. This preserves the existing GTK 4
+requirement without requiring the newer `FileDialog` API.
+
+| GNOME | GTK in checked maintained release manifest | Public chooser/lifecycle declarations | Live chooser results |
+| --- | --- | --- | --- |
+| [46](https://github.com/GNOME/gnome-build-meta/blob/gnome-46/elements/sdk/gtk.bst) | 4.14.5 | Checked | Not run |
+| [47](https://github.com/GNOME/gnome-build-meta/blob/gnome-47/elements/sdk/gtk.bst) | 4.16.13 | Checked | Not run |
+| [48](https://github.com/GNOME/gnome-build-meta/blob/gnome-48/elements/sdk/gtk.bst) | 4.18.6 | Checked | Not run |
+| [49](https://github.com/GNOME/gnome-build-meta/blob/gnome-49/elements/sdk/gtk.bst) | 4.20.4 | Checked | Not run |
+| [50](https://github.com/GNOME/gnome-build-meta/blob/gnome-50/elements/sdk/gtk.bst) | 4.22.5 | Checked | Not run |
+
+Source review checked `gtk/deprecated/gtkfilechoosernative.h`,
+`gtk/deprecated/gtkfilechooser.h` and `gtk/gtknativedialog.h` in each corresponding
+GTK tag: constructor, selection getters/setters, show, modal, response and destroy
+signatures are present. For example, see the
+[4.14.5 constructor](https://github.com/GNOME/gtk/blob/4.14.5/gtk/deprecated/gtkfilechoosernative.h),
+[4.22.5 chooser interface](https://github.com/GNOME/gtk/blob/4.22.5/gtk/deprecated/gtkfilechooser.h)
+and [4.22.5 lifecycle](https://github.com/GNOME/gtk/blob/4.22.5/gtk/gtknativedialog.h).
+The [GTK documentation](https://docs.gtk.org/gtk4/class.FileChooserNative.html)
+explains its response and ownership rules. Maintained branch versions may change;
+distributions can package different GTK and portal versions.
+
+Investigation introspection found the chooser methods on local GTK 4.14.5 with
+GJS 1.80.2, plus the `create-folders` property and `unrealize` signal. No chooser
+was opened for that API check. Run the [chooser acceptance checklist](ui-acceptance.md#graph-directory-chooser)
+on every supported major before claiming full runtime compatibility. Header
+checks, metadata and Node doubles do not satisfy that live acceptance requirement.
