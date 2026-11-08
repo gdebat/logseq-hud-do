@@ -7,6 +7,70 @@ import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/ex
 import {compileTextFilter, readHidden, writeHidden, unhideTask} from './model.js';
 
 export default class Preferences extends ExtensionPreferences {
+    _graphChooser(window, entry, name, feedback) {
+        const browse = new Gtk.Button({label: 'Browse…', valign: Gtk.Align.CENTER,
+            tooltip_text: 'Choose a graph directory'});
+        entry.add_suffix(browse);
+        let chooser = null;
+        let responseSignal = null;
+        let closed = false;
+        const cleanup = () => {
+            const current = chooser;
+            chooser = null;
+            if (current) {
+                if (responseSignal !== null)
+                    current.disconnect(responseSignal);
+                responseSignal = null;
+                current.destroy();
+            }
+            if (!closed)
+                browse.sensitive = true;
+        };
+        const close = () => {
+            closed = true;
+            cleanup();
+            return false;
+        };
+        window.connect('close-request', close);
+        window.connect('unrealize', close);
+        browse.connect('clicked', () => {
+            if (closed || chooser)
+                return;
+            try {
+                chooser = Gtk.FileChooserNative.new('Choose graph directory', window,
+                    Gtk.FileChooserAction.SELECT_FOLDER, 'Select', 'Cancel');
+                chooser.set_modal(true);
+                chooser.set_select_multiple(false);
+                chooser.set_create_folders(false);
+                browse.sensitive = false;
+                responseSignal = chooser.connect('response', (dialog, response) => {
+                    if (closed || dialog !== chooser)
+                        return;
+                    try {
+                        if (response === Gtk.ResponseType.ACCEPT) {
+                            const file = dialog.get_file();
+                            const path = file?.get_path();
+                            if (!path || !GLib.path_is_absolute(path))
+                                throw new Error('Choose a local directory with an absolute path.');
+                            const displayName = name.text.trim() ? name.text : file.get_basename() || '';
+                            entry.text = path;
+                            name.text = displayName;
+                            feedback.subtitle = '';
+                        }
+                    } catch (error) {
+                        feedback.subtitle = `Could not choose graph directory: ${error.message}`;
+                    } finally {
+                        cleanup();
+                    }
+                });
+                chooser.show();
+            } catch (error) {
+                cleanup();
+                feedback.subtitle = `Could not open directory chooser: ${error.message}`;
+            }
+        });
+    }
+
     _hiddenTasks(page, window, settings) {
         const group = new Adw.PreferencesGroup({title: 'Hidden Tasks'});
         page.add(group);
@@ -101,6 +165,7 @@ export default class Preferences extends ExtensionPreferences {
         const button = new Gtk.Button({label: 'Add', valign: Gtk.Align.CENTER});
         addRow.add_suffix(button);
         graphs.add(addRow);
+        this._graphChooser(window, entry, name, addRow);
         button.connect('clicked', () => {
             const path = entry.text.trim();
             const directory = Gio.File.new_for_path(path);
